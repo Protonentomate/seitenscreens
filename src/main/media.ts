@@ -81,18 +81,35 @@ function fileResponse(abs: string, rangeHeader: string | null): Response {
  * Medien laden, ohne dass wir file://-Zugriff freischalten müssen.
  * Später zeigt das hierhin auf den Schattencache statt direkt auf Nextcloud.
  */
+/**
+ * Relativen Medienpfad normalisieren und sicher unter mediaRoot auflösen.
+ * Liefert den absoluten Pfad oder null (Traversal, absolut, nicht vorhanden).
+ */
+export function resolveMediaFile(mediaRoot: string, rel: string): string | null {
+  if (!mediaRoot || !rel) return null
+  const normalized = rel.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/^\/+/, '')
+  if (normalized.length === 0) return null
+  if (path.isAbsolute(normalized) || /^[A-Za-z]:/.test(normalized)) return null
+  if (normalized.split('/').some((seg) => seg === '..')) return null
+  const abs = path.resolve(mediaRoot, normalized)
+  const rootResolved = path.resolve(mediaRoot) + path.sep
+  if (!abs.startsWith(rootResolved)) return null
+  try {
+    if (!fs.statSync(abs).isFile()) return null
+  } catch {
+    return null
+  }
+  return abs
+}
+
 export function registerMediaProtocol(getMediaRoot: () => string): void {
   protocol.handle('media', (request) => {
     const mediaRoot = getMediaRoot()
     if (!mediaRoot) return new Response('mediaRoot nicht konfiguriert', { status: 404 })
     const url = new URL(request.url)
-    const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '')
-    const abs = path.resolve(mediaRoot, rel)
-    const rootResolved = path.resolve(mediaRoot) + path.sep
-    if (!abs.startsWith(rootResolved)) {
-      return new Response('Pfad ausserhalb von mediaRoot', { status: 403 })
-    }
-    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+    const rel = decodeURIComponent(url.pathname)
+    const abs = resolveMediaFile(mediaRoot, rel)
+    if (!abs) {
       return new Response('Datei nicht gefunden', { status: 404 })
     }
     try {
@@ -153,7 +170,10 @@ export function listTemplates(mediaRoot: string): TemplateInfo[] {
 export function getTemplate(mediaRoot: string, name: string): TemplateInfo | null {
   // Kein Pfad-Traversal über den Namen
   if (name.includes('/') || name.includes('\\') || name.includes('..')) return null
-  return listTemplates(mediaRoot).find((t) => t.name === name) ?? null
+  // NFC-normalisiert vergleichen: macOS liefert Ordnernamen in NFD,
+  // URLs/Clients schicken meist NFC — Umlaute würden sonst nie matchen
+  const wanted = name.normalize('NFC')
+  return listTemplates(mediaRoot).find((t) => t.name.normalize('NFC') === wanted) ?? null
 }
 
 /** Lose Bilder direkt in _Vorlagen (Einzelbilder). */

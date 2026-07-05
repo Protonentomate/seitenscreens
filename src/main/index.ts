@@ -62,12 +62,25 @@ async function main(): Promise<void> {
   })
 
   for (const [role, win] of windows) {
-    win.webContents.on('render-process-gone', (_e, details) => {
-      console.error(`[player:${role}] Renderer weg (${details.reason}) — lade neu`)
-      win.webContents.reload()
+    // Referenz VOR dem Close festhalten — der webContents-Getter wirft
+    // nach der Zerstörung des Fensters ("Object has been destroyed")
+    const wc = win.webContents
+    let crashCount = 0
+    wc.on('render-process-gone', (_e, details) => {
+      if (details.reason === 'clean-exit' || details.reason === 'killed') return
+      crashCount++
+      const delayMs = Math.min(2 ** crashCount * 1000, 30_000)
+      console.error(`[player:${role}] Renderer weg (${details.reason}) — Neuladen in ${delayMs}ms`)
+      setTimeout(() => {
+        if (!wc.isDestroyed()) wc.reload()
+      }, delayMs)
+      // Nach 5 Minuten Stabilität wieder bei kurzen Delays anfangen
+      setTimeout(() => {
+        crashCount = Math.max(0, crashCount - 1)
+      }, 300_000)
     })
     win.on('closed', () => {
-      subscribers.delete(win.webContents)
+      subscribers.delete(wc)
     })
   }
 
@@ -80,6 +93,10 @@ async function main(): Promise<void> {
   } catch (err) {
     console.error('[api] Start fehlgeschlagen:', err)
   }
+
+  app.on('before-quit', () => {
+    store.flushLastState()
+  })
 
   app.on('window-all-closed', () => {
     app.quit()

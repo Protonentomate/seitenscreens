@@ -135,23 +135,37 @@ export class Store extends EventEmitter {
     return path.join(path.dirname(configPath()), 'last-state.json')
   }
 
+  private writeLastState(): void {
+    const data: PersistedLastState = {
+      screens: this.screens,
+      activeTemplate: this.activeTemplate,
+      blackout: this.blackout,
+    }
+    try {
+      const file = this.lastStatePath()
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(file + '.tmp', JSON.stringify(data))
+      fs.renameSync(file + '.tmp', file)
+    } catch (err) {
+      console.warn('[store] last-state konnte nicht gespeichert werden:', err)
+    }
+  }
+
   private schedulePersistLastState(): void {
     if (this.persistTimer) clearTimeout(this.persistTimer)
     this.persistTimer = setTimeout(() => {
-      const data: PersistedLastState = {
-        screens: this.screens,
-        activeTemplate: this.activeTemplate,
-        blackout: this.blackout,
-      }
-      try {
-        const file = this.lastStatePath()
-        fs.mkdirSync(path.dirname(file), { recursive: true })
-        fs.writeFileSync(file + '.tmp', JSON.stringify(data))
-        fs.renameSync(file + '.tmp', file)
-      } catch (err) {
-        console.warn('[store] last-state konnte nicht gespeichert werden:', err)
-      }
+      this.persistTimer = null
+      this.writeLastState()
     }, 1000)
+  }
+
+  /** Ausstehende last-state-Schreibung sofort ausführen (beim Beenden). */
+  flushLastState(): void {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer)
+      this.persistTimer = null
+      this.writeLastState()
+    }
   }
 
   restoreLastState(): void {

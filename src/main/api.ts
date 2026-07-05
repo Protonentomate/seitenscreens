@@ -1,7 +1,8 @@
 import Fastify, { type FastifyInstance } from 'fastify'
+import fs from 'node:fs'
 import type { Store } from './store'
 import { kindForFile } from './store'
-import { getTemplate, listTemplates, listSingles } from './media'
+import { getTemplate, listTemplates, listSingles, resolveMediaFile } from './media'
 import { isScreenName, SCREEN_NAMES } from '../shared/screens'
 
 /**
@@ -15,11 +16,21 @@ export async function startApi(store: Store): Promise<FastifyInstance> {
 
   app.get('/api/state', async () => ok())
 
-  app.get('/api/health', async () => ({
-    ok: true,
-    mediaRoot: store.getConfig().mediaRoot,
-    mediaRootExists: Boolean(store.getConfig().mediaRoot),
-  }))
+  app.get('/api/health', async () => {
+    const mediaRoot = store.getConfig().mediaRoot
+    let mediaRootExists = false
+    try {
+      mediaRootExists = Boolean(mediaRoot) && fs.statSync(mediaRoot).isDirectory()
+    } catch {
+      mediaRootExists = false
+    }
+    return {
+      ok: true,
+      mediaRoot,
+      mediaRootConfigured: Boolean(mediaRoot),
+      mediaRootExists,
+    }
+  })
 
   app.get('/api/templates', async () => ({
     ok: true,
@@ -63,16 +74,23 @@ export async function startApi(store: Store): Promise<FastifyInstance> {
     url: '/api/screen/:screen/set',
     handler: async (req, reply) => {
       const { screen } = req.params as { screen: string }
-      const file = (req.query as Record<string, string>).file
+      const rawFile = (req.query as Record<string, string>).file
       if (!isScreenName(screen)) {
         return reply.status(404).send({ ok: false, error: `Unbekannte Leinwand: ${screen}` })
       }
-      if (!file) {
+      if (!rawFile) {
         return reply.status(400).send({ ok: false, error: 'Parameter file fehlt' })
       }
+      // Pfad normalisieren (Backslashes, Doppel-Slashes) und prüfen, dass die
+      // Datei wirklich unter mediaRoot existiert — sonst würde ein Tippfehler
+      // im Stream-Deck-Button die Leinwand kommentarlos schwarz schalten
+      const file = rawFile.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/^\/+/, '')
       const kind = kindForFile(file)
       if (!kind) {
         return reply.status(400).send({ ok: false, error: `Nicht unterstütztes Format: ${file}` })
+      }
+      if (!resolveMediaFile(store.getConfig().mediaRoot, file)) {
+        return reply.status(404).send({ ok: false, error: `Datei nicht gefunden: ${file}` })
       }
       store.setScreen(screen, { file, kind })
       return ok()

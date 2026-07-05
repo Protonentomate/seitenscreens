@@ -126,9 +126,10 @@ function startVideo(
   video: HTMLVideoElement,
   epochMs: number,
   onPlaying: () => void,
+  onError: () => void,
 ): void {
   video.addEventListener('playing', onPlaying, { once: true })
-  video.addEventListener('error', onPlaying, { once: true })
+  video.addEventListener('error', onError, { once: true })
 
   video.addEventListener(
     'loadedmetadata',
@@ -136,6 +137,8 @@ function startVideo(
       const duration = video.duration
       const now = Date.now()
       const begin = () => {
+        // Layer wurde inzwischen ersetzt/entfernt → gar nicht erst starten
+        if (!layer.isConnected) return
         if (Number.isFinite(duration) && duration > 0) {
           video.currentTime = initialPosition(epochMs, duration)
         }
@@ -168,32 +171,25 @@ function teardownLayer(layer: HTMLDivElement): void {
   layer.remove()
 }
 
+function fadeOutAndRemove(layer: HTMLDivElement, transitionMs: number): void {
+  if (!layer.isConnected) return
+  layer.style.transition = `opacity ${transitionMs}ms ease`
+  layer.classList.remove('visible')
+  window.setTimeout(() => teardownLayer(layer), transitionMs + 100)
+}
+
 /** Inhalt eines Quads mit Crossfade wechseln. */
 function setQuadContent(view: QuadView, content: ScreenContent | null, transitionMs: number): void {
   const newFile = content?.file ?? null
   if (newFile === view.currentFile) return
   view.currentFile = newFile
 
-  const oldLayer = view.currentLayer
-  const fade = (layer: HTMLDivElement) => {
-    layer.style.transition = `opacity ${transitionMs}ms ease`
-    // Reflow erzwingen, damit die Transition ab opacity:0 greift
-    void layer.offsetWidth
-    layer.classList.add('visible')
-    if (oldLayer) {
-      oldLayer.style.transition = `opacity ${transitionMs}ms ease`
-      oldLayer.classList.remove('visible')
-      window.setTimeout(() => teardownLayer(oldLayer), transitionMs + 100)
-    }
-  }
-
   if (!content) {
     view.currentLayer = null
     view.syncController = null
-    if (oldLayer) {
-      oldLayer.style.transition = `opacity ${transitionMs}ms ease`
-      oldLayer.classList.remove('visible')
-      window.setTimeout(() => teardownLayer(oldLayer), transitionMs + 100)
+    // Alles ausblenden, was noch da ist — auch noch ladende Ebenen
+    for (const child of Array.from(view.layerHost.children)) {
+      fadeOutAndRemove(child as HTMLDivElement, transitionMs)
     }
     return
   }
@@ -206,16 +202,41 @@ function setQuadContent(view: QuadView, content: ScreenContent | null, transitio
   view.currentLayer = layer
   view.syncController = null
 
+  const fadeIn = () => {
+    // Verspätetes load-Event einer inzwischen überholten Ebene: entsorgen
+    // statt einblenden — sonst erscheint alter Inhalt über dem neuen
+    if (view.currentLayer !== layer || !layer.isConnected) {
+      teardownLayer(layer)
+      return
+    }
+    layer.style.transition = `opacity ${transitionMs}ms ease`
+    // Reflow erzwingen, damit die Transition ab opacity:0 greift
+    void layer.offsetWidth
+    layer.classList.add('visible')
+    // ALLE anderen Ebenen ausblenden (nicht nur die zuletzt sichtbare) —
+    // deckt schnelle A→B→C-Wechsel ab, bei denen B nie sichtbar wurde
+    for (const child of Array.from(view.layerHost.children)) {
+      if (child !== layer) fadeOutAndRemove(child as HTMLDivElement, transitionMs)
+    }
+  }
+
+  const onError = () => {
+    // Kaputte/fehlende Datei: bisherigen Inhalt stehen lassen statt
+    // eine leere Ebene einzublenden (Leinwand würde schwarz)
+    console.error(`[player] Medienfehler auf ${view.root.dataset.screen}: ${content.file}`)
+    teardownLayer(layer)
+  }
+
   if (media instanceof HTMLImageElement) {
-    if (media.complete) fade(layer)
+    if (media.complete) fadeIn()
     else {
-      media.addEventListener('load', () => fade(layer), { once: true })
-      media.addEventListener('error', () => fade(layer), { once: true })
+      media.addEventListener('load', fadeIn, { once: true })
+      media.addEventListener('error', onError, { once: true })
     }
   } else if (media instanceof HTMLVideoElement) {
     const screen = view.root.dataset.screen as ScreenName
     // Erst einblenden, wenn das Video wirklich läuft — synchron zur Epoche
-    startVideo(screen, layer, media, content.epochMs ?? Date.now(), () => fade(layer))
+    startVideo(screen, layer, media, content.epochMs ?? Date.now(), fadeIn, onError)
   }
 }
 
