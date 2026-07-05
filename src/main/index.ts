@@ -39,6 +39,28 @@ async function main(): Promise<void> {
     event.sender.send('state', store.snapshot())
   })
 
+  interface SyncStatsPayload {
+    role: string
+    stats: Array<{
+      screen: string
+      errMs: number
+      rate: number
+      seeks: number
+      droppedFrames: number
+      totalFrames: number
+      currentTime: number
+      paused: boolean
+      readyState: number
+    }>
+  }
+  ipcMain.on('player:syncstats', (_event, payload: SyncStatsPayload) => {
+    const parts = payload.stats.map(
+      (s) =>
+        `${s.screen}: t=${s.currentTime}s${s.paused ? ' PAUSED' : ''} rs=${s.readyState} err=${s.errMs}ms rate=${s.rate.toFixed(3)} seeks=${s.seeks} drop=${s.droppedFrames}/${s.totalFrames}`,
+    )
+    console.log(`[sync:${payload.role}] ${parts.join(' | ')}`)
+  })
+
   for (const [role, win] of windows) {
     win.webContents.on('render-process-gone', (_e, details) => {
       console.error(`[player:${role}] Renderer weg (${details.reason}) — lade neu`)

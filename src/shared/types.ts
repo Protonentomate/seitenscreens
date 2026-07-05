@@ -44,6 +44,12 @@ export interface ScreenContent {
   /** Pfad relativ zu mediaRoot, z.B. "Scene 1/LinksLinks.jpg" */
   file: string
   kind: MediaKind
+  /**
+   * Gemeinsamer Startzeitpunkt (Wanduhr, ms) für synchronisierte Videos.
+   * Alle in einem Zug gesetzten Videos teilen dieselbe Epoche; die Soll-Position
+   * ist ((jetzt − epochMs) / 1000) mod dauer.
+   */
+  epochMs?: number
 }
 
 /** Der eine Zustands-Schnappschuss, den Player-Fenster und Web-Clients erhalten. */

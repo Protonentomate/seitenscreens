@@ -71,19 +71,31 @@ export class Store extends EventEmitter {
     this.schedulePersistLastState()
   }
 
+  /** Vorlauf, bis Videos einer neuen Epoche starten — Zeit zum Laden/Prerollen. */
+  private static readonly VIDEO_PREROLL_MS = 700
+
   setScreen(screen: ScreenName, content: ScreenContent | null, template: string | null = null): void {
+    if (content?.kind === 'video' && content.epochMs === undefined) {
+      content = { ...content, epochMs: Date.now() + Store.VIDEO_PREROLL_MS }
+    }
     this.screens[screen] = content
     this.activeTemplate = template
     this.broadcast()
   }
 
   applyTemplate(name: string, files: Partial<Record<ScreenName, string>>): void {
+    // Eine gemeinsame Epoche für alle Videos dieser Vorlage → synchroner Start
+    const epochMs = Date.now() + Store.VIDEO_PREROLL_MS
     for (const screen of SCREEN_NAMES) {
       const file = files[screen]
       if (!file) continue
       const kind = kindForFile(file)
       if (!kind) continue
-      this.screens[screen] = { file, kind }
+      const previous = this.screens[screen]
+      // Läuft schon mit gültiger Epoche → nicht neu starten (Videos ohne Epoche
+      // stammen aus altem Zustand und brauchen einen synchronisierten Neustart)
+      if (previous && previous.file === file && (previous.kind !== 'video' || previous.epochMs !== undefined)) continue
+      this.screens[screen] = kind === 'video' ? { file, kind, epochMs } : { file, kind }
     }
     this.activeTemplate = name
     this.broadcast()
@@ -146,10 +158,15 @@ export class Store extends EventEmitter {
     try {
       const raw = fs.readFileSync(this.lastStatePath(), 'utf-8')
       const data = JSON.parse(raw) as PersistedLastState
+      // Videos bekommen nach einem Neustart eine frische gemeinsame Epoche
+      const epochMs = Date.now() + Store.VIDEO_PREROLL_MS
       for (const screen of SCREEN_NAMES) {
         const content = data.screens?.[screen]
         if (content && typeof content.file === 'string' && kindForFile(content.file)) {
-          this.screens[screen] = { file: content.file, kind: content.kind }
+          this.screens[screen] =
+            content.kind === 'video'
+              ? { file: content.file, kind: content.kind, epochMs }
+              : { file: content.file, kind: content.kind }
         }
       }
       this.activeTemplate = data.activeTemplate ?? null

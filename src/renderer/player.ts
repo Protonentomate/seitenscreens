@@ -1,6 +1,7 @@
 import type { AppState, Quad, ScreenContent } from '../shared/types'
 import type { PlayerBridge } from '../preload/index'
 import { matrix3dForQuad } from '../shared/homography'
+import { SyncController, initialPosition } from './sync'
 import {
   WINDOW_SCREENS,
   CONTENT_WIDTH,
@@ -70,7 +71,11 @@ interface QuadView {
   layerHost: HTMLDivElement
   currentLayer: HTMLDivElement | null
   currentFile: string | null
+  syncController: SyncController | null
 }
+
+/** Controller pro Layer, damit beim Teardown der richtige gestoppt wird. */
+const layerControllers = new WeakMap<HTMLDivElement, SyncController>()
 
 const quads = new Map<ScreenName, QuadView>()
 
@@ -90,7 +95,7 @@ for (const screen of WINDOW_SCREENS[role]) {
   root.appendChild(pattern)
 
   stage.appendChild(root)
-  quads.set(screen, { root, layerHost, currentLayer: null, currentFile: null })
+  quads.set(screen, { root, layerHost, currentLayer: null, currentFile: null, syncController: null })
 }
 
 function createMediaElement(content: ScreenContent): HTMLElement {
@@ -98,8 +103,8 @@ function createMediaElement(content: ScreenContent): HTMLElement {
     const video = document.createElement('video')
     video.muted = true
     video.loop = true
-    video.autoplay = true
     video.playsInline = true
+    video.preload = 'auto'
     video.src = mediaUrl(content.file)
     return video
   }
@@ -109,7 +114,51 @@ function createMediaElement(content: ScreenContent): HTMLElement {
   return img
 }
 
+/**
+ * Video gegen die gemeinsame Epoche starten: Liegt die Epoche in der Zukunft,
+ * warten wir bis dahin (synchroner Start über beide Fenster); liegt sie in der
+ * Vergangenheit, steigen wir an der richtigen Position in die Timeline ein.
+ * Danach hält der SyncController die Position gegen die Wanduhr.
+ */
+function startVideo(
+  screen: ScreenName,
+  layer: HTMLDivElement,
+  video: HTMLVideoElement,
+  epochMs: number,
+  onPlaying: () => void,
+): void {
+  video.addEventListener('playing', onPlaying, { once: true })
+  video.addEventListener('error', onPlaying, { once: true })
+
+  video.addEventListener(
+    'loadedmetadata',
+    () => {
+      const duration = video.duration
+      const now = Date.now()
+      const begin = () => {
+        if (Number.isFinite(duration) && duration > 0) {
+          video.currentTime = initialPosition(epochMs, duration)
+        }
+        void video.play()
+        const controller = new SyncController(screen, video, epochMs)
+        layerControllers.set(layer, controller)
+        const view = quads.get(screen)
+        if (view && view.currentLayer === layer) view.syncController = controller
+      }
+      if (now < epochMs) {
+        video.currentTime = 0
+        window.setTimeout(begin, epochMs - now)
+      } else {
+        begin()
+      }
+    },
+    { once: true },
+  )
+}
+
 function teardownLayer(layer: HTMLDivElement): void {
+  layerControllers.get(layer)?.stop()
+  layerControllers.delete(layer)
   const video = layer.querySelector('video')
   if (video) {
     video.pause()
@@ -140,6 +189,7 @@ function setQuadContent(view: QuadView, content: ScreenContent | null, transitio
 
   if (!content) {
     view.currentLayer = null
+    view.syncController = null
     if (oldLayer) {
       oldLayer.style.transition = `opacity ${transitionMs}ms ease`
       oldLayer.classList.remove('visible')
@@ -154,6 +204,7 @@ function setQuadContent(view: QuadView, content: ScreenContent | null, transitio
   layer.appendChild(media)
   view.layerHost.appendChild(layer)
   view.currentLayer = layer
+  view.syncController = null
 
   if (media instanceof HTMLImageElement) {
     if (media.complete) fade(layer)
@@ -162,14 +213,20 @@ function setQuadContent(view: QuadView, content: ScreenContent | null, transitio
       media.addEventListener('error', () => fade(layer), { once: true })
     }
   } else if (media instanceof HTMLVideoElement) {
-    // M2 bringt das synchronisierte Start-Protokoll; vorerst: einblenden, sobald Daten da sind
-    if (media.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) fade(layer)
-    else {
-      media.addEventListener('loadeddata', () => fade(layer), { once: true })
-      media.addEventListener('error', () => fade(layer), { once: true })
-    }
+    const screen = view.root.dataset.screen as ScreenName
+    // Erst einblenden, wenn das Video wirklich läuft — synchron zur Epoche
+    startVideo(screen, layer, media, content.epochMs ?? Date.now(), () => fade(layer))
   }
 }
+
+// Sync-Statistiken alle 2 s an den Main-Process (Log + später Preflight-Panel)
+window.setInterval(() => {
+  const stats = []
+  for (const view of quads.values()) {
+    if (view.syncController) stats.push(view.syncController.stats())
+  }
+  if (stats.length > 0) window.player.syncStats({ role, stats })
+}, 2000)
 
 function render(state: AppState): void {
   for (const screen of WINDOW_SCREENS[role]) {
