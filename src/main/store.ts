@@ -1,9 +1,19 @@
 import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AppConfig, AppState, Quad, ScreenContent } from '../shared/types'
+import type {
+  AppConfig,
+  AppState,
+  MediaIndexSnapshot,
+  ProjectorStatus,
+  Quad,
+  ScreenContent,
+  TemplateInfo,
+} from '../shared/types'
 import { SCREEN_NAMES, type ScreenName } from '../shared/screens'
 import { saveConfig, configPath } from './config'
+import { ensureCached } from './cache'
+import { resolveMediaFile } from './media'
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp'])
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm'])
@@ -21,10 +31,15 @@ interface PersistedLastState {
   blackout: boolean
 }
 
+export interface ApplyResult {
+  ok: boolean
+  error?: string
+}
+
 /**
  * Einzige Quelle der Wahrheit: alle Mutationen laufen durch diese Klasse,
  * jede Änderung wird als kompletter Schnappschuss an alle Abonnenten verteilt
- * (Player-Fenster über IPC, Web-Clients später über WebSocket).
+ * (Player-Fenster über IPC, Web-Clients über WebSocket).
  */
 export class Store extends EventEmitter {
   private config: AppConfig
@@ -34,6 +49,8 @@ export class Store extends EventEmitter {
   private testPattern = false
   private simulatorActive = false
   private persistTimer: NodeJS.Timeout | null = null
+  private mediaIndex: MediaIndexSnapshot = { templates: [], singles: [], updatedAt: 0, mediaRootExists: false }
+  private projectors: ProjectorStatus[] = []
 
   constructor(config: AppConfig) {
     super()
@@ -54,6 +71,16 @@ export class Store extends EventEmitter {
     this.simulatorActive = active
   }
 
+  setMediaIndex(snapshot: MediaIndexSnapshot): void {
+    this.mediaIndex = snapshot
+    this.broadcast()
+  }
+
+  setProjectors(projectors: ProjectorStatus[]): void {
+    this.projectors = projectors
+    this.broadcast()
+  }
+
   snapshot(): AppState {
     return {
       screens: { ...this.screens },
@@ -63,6 +90,9 @@ export class Store extends EventEmitter {
       transitionMs: this.config.transitionMs,
       calibration: { ...this.config.screens },
       simulator: this.simulatorActive,
+      mediaIndex: this.mediaIndex,
+      projectors: this.projectors,
+      mediaRoot: this.config.mediaRoot,
     }
   }
 
@@ -74,31 +104,61 @@ export class Store extends EventEmitter {
   /** Vorlauf, bis Videos einer neuen Epoche starten — Zeit zum Laden/Prerollen. */
   private static readonly VIDEO_PREROLL_MS = 700
 
-  setScreen(screen: ScreenName, content: ScreenContent | null, template: string | null = null): void {
-    if (content?.kind === 'video' && content.epochMs === undefined) {
-      content = { ...content, epochMs: Date.now() + Store.VIDEO_PREROLL_MS }
+  private async cacheFile(rel: string): Promise<void> {
+    const abs = resolveMediaFile(this.config.mediaRoot, rel)
+    if (abs) await ensureCached(this.config.mediaRoot, rel, abs)
+  }
+
+  async setScreen(screen: ScreenName, content: ScreenContent | null, template: string | null = null): Promise<void> {
+    if (content) {
+      await this.cacheFile(content.file)
+      if (content.kind === 'video' && content.epochMs === undefined) {
+        content = { ...content, epochMs: Date.now() + Store.VIDEO_PREROLL_MS }
+      }
     }
     this.screens[screen] = content
     this.activeTemplate = template
     this.broadcast()
   }
 
-  applyTemplate(name: string, files: Partial<Record<ScreenName, string>>): void {
+  /**
+   * Vorlage anwenden. Lehnt ab, wenn ein Video den Encoding-Kontrakt hart
+   * verletzt (würde auf dem Beamer-PC ruckeln) — ausser mit force.
+   */
+  async applyTemplate(template: TemplateInfo, force = false): Promise<ApplyResult> {
+    if (!force) {
+      const blocked = (Object.keys(template.files) as ScreenName[])
+        .map((s) => ({ screen: s, info: template.files[s] }))
+        .filter((e) => e.info?.probe && !e.info.probe.playable)
+      if (blocked.length > 0) {
+        const first = blocked[0]
+        return {
+          ok: false,
+          error: `Nicht abspielbar: ${first?.screen} — ${first?.info?.probe?.warnings[0] ?? 'Kontrakt verletzt'}`,
+        }
+      }
+    }
+
+    // Erst alle Dateien in den Schattencache, dann in einem Zug umschalten
+    const files = (Object.keys(template.files) as ScreenName[])
+      .map((screen) => ({ screen, info: template.files[screen] }))
+      .filter((e): e is { screen: ScreenName; info: NonNullable<typeof e.info> } => Boolean(e.info))
+    await Promise.all(files.map((e) => this.cacheFile(e.info.file)))
+
     // Eine gemeinsame Epoche für alle Videos dieser Vorlage → synchroner Start
     const epochMs = Date.now() + Store.VIDEO_PREROLL_MS
-    for (const screen of SCREEN_NAMES) {
-      const file = files[screen]
-      if (!file) continue
-      const kind = kindForFile(file)
-      if (!kind) continue
+    for (const { screen, info } of files) {
       const previous = this.screens[screen]
       // Läuft schon mit gültiger Epoche → nicht neu starten (Videos ohne Epoche
       // stammen aus altem Zustand und brauchen einen synchronisierten Neustart)
-      if (previous && previous.file === file && (previous.kind !== 'video' || previous.epochMs !== undefined)) continue
-      this.screens[screen] = kind === 'video' ? { file, kind, epochMs } : { file, kind }
+      if (previous && previous.file === info.file && (previous.kind !== 'video' || previous.epochMs !== undefined)) {
+        continue
+      }
+      this.screens[screen] = info.kind === 'video' ? { file: info.file, kind: info.kind, epochMs } : { file: info.file, kind: info.kind }
     }
-    this.activeTemplate = name
+    this.activeTemplate = template.name
     this.broadcast()
+    return { ok: true }
   }
 
   setBlackout(on: boolean): void {
@@ -127,6 +187,24 @@ export class Store extends EventEmitter {
     this.config.transitionMs = ms
     saveConfig(this.config)
     this.broadcast()
+  }
+
+  /** Medienordner umstellen — meldet 'mediaroot-changed', damit der Index neu startet. */
+  setMediaRoot(root: string): void {
+    this.config.mediaRoot = root
+    saveConfig(this.config)
+    this.emit('mediaroot-changed', root)
+    this.broadcast()
+  }
+
+  setProjectorHost(id: string, host: string): boolean {
+    const projector = this.config.projectors.find((p) => p.id === id)
+    if (!projector) return false
+    projector.host = host
+    saveConfig(this.config)
+    this.emit('projectors-changed', this.config.projectors)
+    this.broadcast()
+    return true
   }
 
   // --- Letzten Zustand über Neustarts hinweg wiederherstellen ---
@@ -181,6 +259,8 @@ export class Store extends EventEmitter {
             content.kind === 'video'
               ? { file: content.file, kind: content.kind, epochMs }
               : { file: content.file, kind: content.kind }
+          // Cache im Hintergrund auffüllen; bis dahin spielt das Original
+          void this.cacheFile(content.file)
         }
       }
       this.activeTemplate = data.activeTemplate ?? null

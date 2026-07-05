@@ -4,6 +4,8 @@ import { Store } from './store'
 import { registerMediaSchemePrivileges, registerMediaProtocol } from './media'
 import { createPlayerWindows } from './windows'
 import { startApi } from './api'
+import { MediaIndex } from './mediaIndex'
+import { ProjectorManager } from './projectors'
 
 // Muss vor app.whenReady() passieren
 registerMediaSchemePrivileges()
@@ -86,10 +88,24 @@ async function main(): Promise<void> {
 
   powerSaveBlocker.start('prevent-display-sleep')
 
+  // Medien-Index: beobachtet den Nextcloud-Ordner, prüft Videos per ffprobe
+  const index = new MediaIndex()
+  index.on('index', (snapshot) => store.setMediaIndex(snapshot))
+  store.on('mediaroot-changed', (root: string) => void index.start(root))
+  void index.start(config.mediaRoot)
+
+  // Beamer-Steuerung (control_cgi über die Webinterfaces)
+  const projectors = new ProjectorManager(config.projectors, () => store.setProjectors(projectors.list()))
+  store.setProjectors(projectors.list())
+  store.on('projectors-changed', (configs) => {
+    projectors.updateConfigs(configs)
+    store.setProjectors(projectors.list())
+  })
+
   store.restoreLastState()
 
   try {
-    await startApi(store)
+    await startApi(store, index, projectors)
   } catch (err) {
     console.error('[api] Start fehlgeschlagen:', err)
   }
