@@ -6,6 +6,7 @@ import { createPlayerWindows } from './windows'
 import { startApi } from './api'
 import { MediaIndex } from './mediaIndex'
 import { ProjectorManager } from './projectors'
+import { IngestQueue } from './ingest'
 
 // Muss vor app.whenReady() passieren
 registerMediaSchemePrivileges()
@@ -102,10 +103,13 @@ async function main(): Promise<void> {
     store.setProjectors(projectors.list())
   })
 
+  // Upload-Verarbeitung (pausiert automatisch, solange Videos live laufen)
+  const ingest = new IngestQueue(store)
+
   store.restoreLastState()
 
   try {
-    await startApi(store, index, projectors)
+    await startApi(store, index, projectors, ingest)
   } catch (err) {
     console.error('[api] Start fehlgeschlagen:', err)
   }

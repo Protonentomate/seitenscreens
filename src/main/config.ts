@@ -47,6 +47,13 @@ export function defaultConfig(): AppConfig {
       { id: 'links', name: 'Beamer links', host: '192.168.100.95', driver: 'control-cgi' },
       { id: 'rechts', name: 'Beamer rechts', host: '192.168.100.96', driver: 'control-cgi' },
     ],
+    // Platzhalter-Masse — echte Werte werden bei der Einrichtung in der
+    // Kirche ausgemessen und in den Einstellungen eingetragen
+    layout: {
+      canvasWmm: 1000,
+      canvasHmm: 1780,
+      gapsMm: [300, 4000, 300],
+    },
   }
 }
 
@@ -59,6 +66,7 @@ function mergeWithDefaults(loaded: Partial<AppConfig>): AppConfig {
     simulator: { ...def.simulator, ...loaded.simulator },
     screens: { ...def.screens, ...(loaded.screens ?? {}) },
     projectors: loaded.projectors ?? def.projectors,
+    layout: { ...def.layout, ...(loaded.layout ?? {}) },
   }
   // Nur bekannte Screens behalten
   for (const key of Object.keys(merged.screens)) {

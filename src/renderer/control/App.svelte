@@ -27,6 +27,19 @@
   let formTransitionMs = $state(300)
   let formHostLinks = $state('')
   let formHostRechts = $state('')
+  let formCanvasW = $state(1000)
+  let formCanvasH = $state(1780)
+  let formGap0 = $state(300)
+  let formGap1 = $state(4000)
+  let formGap2 = $state(300)
+
+  // Upload-Formular (Verwaltung)
+  let uploadFile = $state<File | null>(null)
+  let uploadTemplateName = $state('')
+  let uploadMode = $state<'clone' | 'span' | 'single'>('clone')
+  let uploadTarget = $state<ScreenName>('LinksLinks')
+  let uploadFit = $state<'contain' | 'cover'>('contain')
+  let uploading = $state(false)
 
   function showBanner(kind: 'error' | 'ok', text: string): void {
     banner = { kind, text }
@@ -142,6 +155,11 @@
     formTransitionMs = state.transitionMs
     formHostLinks = state.projectors.find((p) => p.id === 'links')?.host ?? ''
     formHostRechts = state.projectors.find((p) => p.id === 'rechts')?.host ?? ''
+    formCanvasW = state.layout.canvasWmm
+    formCanvasH = state.layout.canvasHmm
+    formGap0 = state.layout.gapsMm[0]
+    formGap1 = state.layout.gapsMm[1]
+    formGap2 = state.layout.gapsMm[2]
     showSettings = true
   }
 
@@ -153,11 +171,54 @@
         { id: 'links', host: formHostLinks },
         { id: 'rechts', host: formHostRechts },
       ],
+      layout: {
+        canvasWmm: formCanvasW,
+        canvasHmm: formCanvasH,
+        gapsMm: [formGap0, formGap1, formGap2],
+      },
     })
     if (ok) {
       showBanner('ok', 'Einstellungen gespeichert')
       showSettings = false
     }
+  }
+
+  async function submitUpload(event: SubmitEvent): Promise<void> {
+    event.preventDefault()
+    if (!uploadFile || !uploadTemplateName.trim()) {
+      showBanner('error', 'Datei und Vorlagen-Name angeben')
+      return
+    }
+    uploading = true
+    try {
+      const form = new FormData()
+      form.append('templateName', uploadTemplateName.trim())
+      form.append('mode', uploadMode)
+      form.append('fit', uploadFit)
+      if (uploadMode === 'single') form.append('target', uploadTarget)
+      form.append('file', uploadFile)
+      const res = await fetch(`${apiBase}/api/upload`, { method: 'POST', body: form })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false) {
+        showBanner('error', data.error ?? `Upload fehlgeschlagen (${res.status})`)
+      } else {
+        showBanner('ok', 'Hochgeladen — Verarbeitung läuft')
+        uploadFile = null
+        uploadTemplateName = ''
+      }
+    } catch (err) {
+      showBanner('error', `Upload fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      uploading = false
+    }
+  }
+
+  const jobStatusLabel: Record<string, string> = {
+    queued: 'Wartet',
+    'waiting-live': 'Wartet (Video läuft auf den Leinwänden)',
+    running: 'Verarbeitet…',
+    done: 'Fertig',
+    error: 'Fehler',
   }
 </script>
 
@@ -279,6 +340,58 @@
     </section>
 
     <section>
+      <h2>Verwaltung — Neue Vorlage hochladen</h2>
+      <form class="upload" onsubmit={submitUpload}>
+        <div class="uploadrow">
+          <input
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp,.mp4,.mov,.webm,.m4v"
+            onchange={(e) => (uploadFile = (e.currentTarget as HTMLInputElement).files?.[0] ?? null)}
+          />
+          <input
+            type="text"
+            class="tinput"
+            placeholder="Vorlagen-Name (neu oder bestehend)"
+            bind:value={uploadTemplateName}
+            list="template-names"
+          />
+          <datalist id="template-names">
+            {#each state.mediaIndex.templates as t (t.name)}<option value={t.name}></option>{/each}
+          </datalist>
+        </div>
+        <div class="uploadrow">
+          <label class="radio"><input type="radio" bind:group={uploadMode} value="clone" /> Gleich auf allen 4</label>
+          <label class="radio"><input type="radio" bind:group={uploadMode} value="span" /> Über alle 4 spannen (mit Abständen)</label>
+          <label class="radio">
+            <input type="radio" bind:group={uploadMode} value="single" /> Eine Leinwand:
+            <select bind:value={uploadTarget} disabled={uploadMode !== 'single'}>
+              {#each SCREEN_NAMES as s (s)}<option value={s}>{SHORT[s]}</option>{/each}
+            </select>
+          </label>
+          <span class="sep"></span>
+          <label class="radio"><input type="radio" bind:group={uploadFit} value="contain" /> Einpassen</label>
+          <label class="radio"><input type="radio" bind:group={uploadFit} value="cover" /> Füllen</label>
+          <button class="primary" type="submit" disabled={uploading}>
+            {uploading ? 'Lädt hoch…' : 'Hochladen & verarbeiten'}
+          </button>
+        </div>
+      </form>
+      {#if state.jobs.length > 0}
+        <div class="jobs">
+          {#each [...state.jobs].reverse() as job (job.id)}
+            <div class="job {job.status}">
+              <span class="joblabel">{job.label}</span>
+              <span class="jobstatus">{jobStatusLabel[job.status] ?? job.status}{job.error ? ` — ${job.error}` : ''}</span>
+              {#if job.status === 'running'}
+                <progress value={job.progress} max="1"></progress>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </section>
+
+    <section>
       <h2>Einzelbilder</h2>
       {#if state.mediaIndex.singles.length === 0}
         <p class="muted">Keine losen Dateien im Ordner.</p>
@@ -323,6 +436,16 @@
           Beamer rechts (IP/Host)
           <input type="text" bind:value={formHostRechts} />
         </label>
+        <fieldset class="layoutset">
+          <legend>Wand-Layout (für „über alle 4 spannen")</legend>
+          <div class="layoutgrid">
+            <label>Leinwand-Breite (mm)<input type="number" bind:value={formCanvasW} min="100" /></label>
+            <label>Leinwand-Höhe (mm)<input type="number" bind:value={formCanvasH} min="100" /></label>
+            <label>Abstand LL–LR (mm)<input type="number" bind:value={formGap0} min="0" /></label>
+            <label>Abstand Mitte/Bühne (mm)<input type="number" bind:value={formGap1} min="0" /></label>
+            <label>Abstand RL–RR (mm)<input type="number" bind:value={formGap2} min="0" /></label>
+          </div>
+        </fieldset>
         <div class="dialogfoot">
           <button onclick={() => (showSettings = false)}>Abbrechen</button>
           <button class="primary" onclick={saveSettings}>Speichern</button>
@@ -607,6 +730,96 @@
     display: flex;
     gap: 4px;
     padding-top: 8px;
+  }
+
+  .upload {
+    background: #1c1f24;
+    border: 1px solid #2c313a;
+    border-radius: 10px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .uploadrow {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .tinput {
+    flex: 1;
+    min-width: 220px;
+    padding: 8px 10px;
+    background: #14161a;
+    color: #e8eaed;
+    border: 1px solid #3d434c;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  .radio {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #cdd2d9;
+  }
+  .sep {
+    flex: 1;
+  }
+  .jobs {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .job {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    background: #1c1f24;
+    border: 1px solid #2c313a;
+    border-radius: 8px;
+    padding: 8px 12px;
+  }
+  .job.error {
+    border-color: #a94442;
+  }
+  .job.done {
+    opacity: 0.65;
+  }
+  .joblabel {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .jobstatus {
+    color: #aab0b8;
+  }
+  .job progress {
+    width: 140px;
+    accent-color: #3a6fc4;
+  }
+  .layoutset {
+    border: 1px solid #3d434c;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    padding: 10px;
+  }
+  .layoutset legend {
+    font-size: 12px;
+    color: #aab0b8;
+    padding: 0 6px;
+  }
+  .layoutgrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .layoutgrid label {
+    margin-bottom: 0;
   }
 
   .overlay {

@@ -27,6 +27,21 @@ export interface ProjectorConfig {
   driver: 'control-cgi' | 'none'
 }
 
+/**
+ * Physisches Wand-Layout: Grösse der Leinwände und die realen Abstände
+ * dazwischen. Treibt den Span-Modus (ein Motiv über alle 4 Leinwände):
+ * die Zuschnitte "überspringen" die Lücken, damit durchlaufende Motive
+ * physisch fluchten.
+ */
+export interface WallLayout {
+  /** Breite einer Leinwand in mm. */
+  canvasWmm: number
+  /** Höhe einer Leinwand in mm. */
+  canvasHmm: number
+  /** Abstände zwischen den Leinwänden in mm: [LL→LR, LR→RL (Bühne), RL→RR]. */
+  gapsMm: [number, number, number]
+}
+
 export interface AppConfig {
   version: 1
   /** Absoluter Pfad zum Nextcloud-Ordner _Vorlagen (pro Maschine verschieden). */
@@ -36,6 +51,23 @@ export interface AppConfig {
   transitionMs: number
   screens: Record<ScreenName, ScreenCalibration>
   projectors: ProjectorConfig[]
+  layout: WallLayout
+}
+
+export type IngestMode = 'single' | 'clone' | 'span'
+export type IngestFit = 'contain' | 'cover'
+
+export type IngestStatus = 'queued' | 'waiting-live' | 'running' | 'done' | 'error'
+
+export interface IngestJob {
+  id: string
+  /** Anzeige, z.B. "Herbstserie ← intro.mov (span)" */
+  label: string
+  status: IngestStatus
+  /** 0..1 */
+  progress: number
+  error?: string
+  createdAt: number
 }
 
 export type MediaKind = 'image' | 'video'
@@ -123,4 +155,7 @@ export interface AppState {
   videoPaused: boolean
   /** Wanduhr-Zeitpunkt der Pause (definiert die eingefrorene Position). */
   videoPausedAtMs: number | null
+  /** Laufende/erledigte Verarbeitungs-Jobs (Upload → Normalisieren). */
+  jobs: IngestJob[]
+  layout: WallLayout
 }

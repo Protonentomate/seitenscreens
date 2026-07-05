@@ -4,11 +4,13 @@ import path from 'node:path'
 import type {
   AppConfig,
   AppState,
+  IngestJob,
   MediaIndexSnapshot,
   ProjectorStatus,
   Quad,
   ScreenContent,
   TemplateInfo,
+  WallLayout,
 } from '../shared/types'
 import { SCREEN_NAMES, type ScreenName } from '../shared/screens'
 import { saveConfig, configPath } from './config'
@@ -57,6 +59,7 @@ export class Store extends EventEmitter {
   private projectors: ProjectorStatus[] = []
   private videoPaused = false
   private videoPausedAtMs: number | null = null
+  private jobs: IngestJob[] = []
   private mutationChain: Promise<unknown> = Promise.resolve()
 
   constructor(config: AppConfig) {
@@ -102,7 +105,20 @@ export class Store extends EventEmitter {
       mediaRoot: this.config.mediaRoot,
       videoPaused: this.videoPaused,
       videoPausedAtMs: this.videoPausedAtMs,
+      jobs: this.jobs,
+      layout: this.config.layout,
     }
+  }
+
+  setJobs(jobs: IngestJob[]): void {
+    this.jobs = jobs
+    this.broadcast()
+  }
+
+  setLayout(layout: WallLayout): void {
+    this.config.layout = layout
+    saveConfig(this.config)
+    this.broadcast()
   }
 
   private broadcast(): void {

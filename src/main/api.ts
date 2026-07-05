@@ -2,18 +2,21 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
 import fastifyStatic from '@fastify/static'
 import fastifyCors from '@fastify/cors'
+import fastifyMultipart from '@fastify/multipart'
 import { app as electronApp } from 'electron'
 import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { pipeline } from 'node:stream/promises'
 import type { Store } from './store'
 import { kindForFile } from './store'
 import type { MediaIndex } from './mediaIndex'
 import type { ProjectorManager } from './projectors'
+import type { IngestQueue } from './ingest'
 import { resolveMediaFile, openFileStream, isServableMedia } from './media'
 import { isScreenName, SCREEN_NAMES, type ScreenName } from '../shared/screens'
-import type { MediaFileInfo } from '../shared/types'
+import type { MediaFileInfo, IngestFit, IngestMode } from '../shared/types'
 
 function ffmpegBinary(): string {
   return process.env.SEITENSCREENS_FFMPEG || 'ffmpeg'
@@ -30,13 +33,19 @@ function toolAvailable(binary: string): Promise<boolean> {
  * (API Request) und jeder Browser sie direkt aufrufen können. Ohne Auth,
  * bewusst: Kirchen-LAN, Einfachheit ist Teil der Anforderung.
  */
-export async function startApi(store: Store, index: MediaIndex, projectors: ProjectorManager): Promise<FastifyInstance> {
+export async function startApi(
+  store: Store,
+  index: MediaIndex,
+  projectors: ProjectorManager,
+  ingest: IngestQueue,
+): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
   // Im Dev-Modus läuft die UI auf dem Vite-Port (5173), die API auf 8080 —
   // ohne CORS blockt der Browser die Antworten ("Failed to fetch"), obwohl
   // die Aktion ausgeführt wurde.
   await app.register(fastifyCors, { origin: true })
   await app.register(fastifyWebsocket)
+  await app.register(fastifyMultipart, { limits: { fileSize: 2 * 1024 * 1024 * 1024, files: 1 } })
 
   const ok = (extra: Record<string, unknown> = {}) => ({ ok: true, ...extra, state: store.snapshot() })
 
@@ -281,6 +290,55 @@ export async function startApi(store: Store, index: MediaIndex, projectors: Proj
     },
   })
 
+  // --- Upload & Verarbeitung (Admin) ---
+
+  app.post('/api/upload', async (req, reply) => {
+    const data = await req.file()
+    if (!data) {
+      return reply.status(400).send({ ok: false, error: 'Keine Datei im Upload' })
+    }
+    const fields = data.fields as Record<string, { value?: unknown } | undefined>
+    const fieldValue = (name: string): string => String(fields[name]?.value ?? '').trim()
+
+    const templateName = fieldValue('templateName')
+    const mode = fieldValue('mode') as IngestMode
+    const fit = (fieldValue('fit') || 'contain') as IngestFit
+    const target = fieldValue('target')
+
+    if (!['single', 'clone', 'span'].includes(mode)) {
+      return reply.status(400).send({ ok: false, error: 'mode muss single|clone|span sein' })
+    }
+    if (!['contain', 'cover'].includes(fit)) {
+      return reply.status(400).send({ ok: false, error: 'fit muss contain|cover sein' })
+    }
+    if (mode === 'single' && !isScreenName(target)) {
+      return reply.status(400).send({ ok: false, error: 'target muss eine Leinwand sein' })
+    }
+
+    // Upload zuerst vollständig ins Work-Dir streamen
+    const safeName = path.basename(data.filename || 'upload').replace(/[^\w.\-äöüÄÖÜéèà ]/g, '_')
+    const uploadPath = path.join(ingest.workDir(), `upload-${Date.now()}-${safeName}`)
+    await pipeline(data.file, fs.createWriteStream(uploadPath))
+    if (data.file.truncated) {
+      fs.rmSync(uploadPath, { force: true })
+      return reply.status(413).send({ ok: false, error: 'Datei zu gross (max. 2 GB)' })
+    }
+
+    const result = ingest.enqueue({
+      uploadPath,
+      originalName: safeName,
+      templateName,
+      mode,
+      target: mode === 'single' ? (target as ScreenName) : undefined,
+      fit,
+    })
+    if (!result.ok) {
+      fs.rmSync(uploadPath, { force: true })
+      return reply.status(400).send({ ok: false, error: result.error })
+    }
+    return ok({ jobId: result.jobId })
+  })
+
   // --- Einstellungen (Medienordner, Übergang, Beamer-IPs) ---
 
   app.get('/api/config', async () => {
@@ -291,6 +349,7 @@ export async function startApi(store: Store, index: MediaIndex, projectors: Proj
         mediaRoot: cfg.mediaRoot,
         transitionMs: cfg.transitionMs,
         projectors: cfg.projectors,
+        layout: cfg.layout,
       },
     }
   })
@@ -338,11 +397,23 @@ export async function startApi(store: Store, index: MediaIndex, projectors: Proj
         newProjectors.push({ id: p.id, host: p.host.trim() })
       }
     }
+    let newLayout: { canvasWmm: number; canvasHmm: number; gapsMm: [number, number, number] } | undefined
+    const bodyLayout = (body as { layout?: { canvasWmm?: unknown; canvasHmm?: unknown; gapsMm?: unknown[] } }).layout
+    if (bodyLayout) {
+      const w = Number(bodyLayout.canvasWmm)
+      const h = Number(bodyLayout.canvasHmm)
+      const gaps = Array.isArray(bodyLayout.gapsMm) ? bodyLayout.gapsMm.map(Number) : []
+      if (!(w > 100 && h > 100) || gaps.length !== 3 || gaps.some((g) => !Number.isFinite(g) || g < 0)) {
+        return reply.status(400).send({ ok: false, error: 'Layout: Masse in mm (Breite/Höhe > 100, 3 Abstände ≥ 0)' })
+      }
+      newLayout = { canvasWmm: w, canvasHmm: h, gapsMm: [gaps[0]!, gaps[1]!, gaps[2]!] }
+    }
 
     // Phase 2: anwenden
     if (newMediaRoot !== undefined) store.setMediaRoot(newMediaRoot)
     if (newTransitionMs !== undefined) store.setTransitionMs(newTransitionMs)
     for (const p of newProjectors) store.setProjectorHost(p.id, p.host)
+    if (newLayout) store.setLayout(newLayout)
     return ok()
   })
 
