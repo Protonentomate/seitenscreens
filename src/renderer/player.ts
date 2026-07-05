@@ -1,7 +1,7 @@
 import type { AppState, Quad, ScreenContent } from '../shared/types'
 import type { PlayerBridge } from '../preload/index'
 import { matrix3dForQuad } from '../shared/homography'
-import { SyncController, initialPosition } from './sync'
+import { SyncController, initialPosition, wrap } from './sync'
 import {
   WINDOW_SCREENS,
   CONTENT_WIDTH,
@@ -37,9 +37,17 @@ function fitStage(): void {
 window.addEventListener('resize', fitStage)
 fitStage()
 
-function mediaUrl(file: string): string {
-  const encoded = file.split('/').map(encodeURIComponent).join('/')
-  return `media://local/${encoded}`
+function mediaUrl(content: ScreenContent): string {
+  const encoded = content.file.split('/').map(encodeURIComponent).join('/')
+  const version = content.version ? `?v=${encodeURIComponent(content.version)}` : ''
+  return `media://local/${encoded}${version}`
+}
+
+/** Identität eines Inhalts: Datei UND Version — eine in Nextcloud ersetzte
+ *  Datei (neue Version) zählt als Wechsel und wird sauber neu geladen. */
+function contentKey(content: ScreenContent | null): string | null {
+  if (!content) return null
+  return `${content.file}|${content.version ?? ''}`
 }
 
 function testPatternSvg(screen: ScreenName): string {
@@ -105,11 +113,11 @@ function createMediaElement(content: ScreenContent): HTMLElement {
     video.loop = true
     video.playsInline = true
     video.preload = 'auto'
-    video.src = mediaUrl(content.file)
+    video.src = mediaUrl(content)
     return video
   }
   const img = document.createElement('img')
-  img.src = mediaUrl(content.file)
+  img.src = mediaUrl(content)
   img.alt = ''
   return img
 }
@@ -180,9 +188,9 @@ function fadeOutAndRemove(layer: HTMLDivElement, transitionMs: number): void {
 
 /** Inhalt eines Quads mit Crossfade wechseln. */
 function setQuadContent(view: QuadView, content: ScreenContent | null, transitionMs: number): void {
-  const newFile = content?.file ?? null
-  if (newFile === view.currentFile) return
-  view.currentFile = newFile
+  const newKey = contentKey(content)
+  if (newKey === view.currentFile) return
+  view.currentFile = newKey
 
   if (!content) {
     view.currentLayer = null
@@ -249,6 +257,34 @@ window.setInterval(() => {
   if (stats.length > 0) window.player.syncStats({ role, stats })
 }, 2000)
 
+/** Globale Pause/Play/Seek auf ein laufendes Video anwenden. */
+function applyPlayback(view: QuadView, content: ScreenContent | null, state: AppState): void {
+  if (!content || content.kind !== 'video') return
+  const video = view.currentLayer?.querySelector('video')
+  if (!video) return
+
+  // Seek/Resume: neue Epoche übernehmen (Controller springt an die Soll-Position)
+  if (content.epochMs !== undefined && view.syncController) {
+    view.syncController.setEpoch(content.epochMs)
+  }
+
+  if (state.videoPaused) {
+    if (!video.paused) video.pause()
+    // Eingefrorene Position = Loop-Position zum Pausenzeitpunkt
+    if (
+      state.videoPausedAtMs !== null &&
+      content.epochMs !== undefined &&
+      Number.isFinite(video.duration) &&
+      video.duration > 0
+    ) {
+      const pos = wrap((state.videoPausedAtMs - content.epochMs) / 1000, video.duration)
+      if (Math.abs(video.currentTime - pos) > 0.05) video.currentTime = pos
+    }
+  } else if (video.paused && video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+    void video.play()
+  }
+}
+
 function render(state: AppState): void {
   for (const screen of WINDOW_SCREENS[role]) {
     const view = quads.get(screen)
@@ -261,7 +297,9 @@ function render(state: AppState): void {
     }
 
     view.root.classList.toggle('show-testpattern', state.testPattern)
-    setQuadContent(view, state.screens[screen], state.transitionMs)
+    const content = state.screens[screen]
+    setQuadContent(view, content, state.transitionMs)
+    applyPlayback(view, content, state)
   }
 
   blackoutEl.classList.toggle('active', state.blackout)

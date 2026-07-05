@@ -12,7 +12,7 @@ import type {
 } from '../shared/types'
 import { SCREEN_NAMES, type ScreenName } from '../shared/screens'
 import { saveConfig, configPath } from './config'
-import { ensureCached } from './cache'
+import { ensureCached, clearCacheRegistry } from './cache'
 import { resolveMediaFile } from './media'
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp'])
@@ -40,6 +40,10 @@ export interface ApplyResult {
  * Einzige Quelle der Wahrheit: alle Mutationen laufen durch diese Klasse,
  * jede Änderung wird als kompletter Schnappschuss an alle Abonnenten verteilt
  * (Player-Fenster über IPC, Web-Clients über WebSocket).
+ *
+ * Inhalts-Mutationen mit await (Schattencache-Kopien) sind über eine
+ * Promise-Kette serialisiert — zwei schnelle API-Aufrufe können sich nie
+ * zu einem Misch-Zustand verschränken.
  */
 export class Store extends EventEmitter {
   private config: AppConfig
@@ -51,6 +55,9 @@ export class Store extends EventEmitter {
   private persistTimer: NodeJS.Timeout | null = null
   private mediaIndex: MediaIndexSnapshot = { templates: [], singles: [], updatedAt: 0, mediaRootExists: false }
   private projectors: ProjectorStatus[] = []
+  private videoPaused = false
+  private videoPausedAtMs: number | null = null
+  private mutationChain: Promise<unknown> = Promise.resolve()
 
   constructor(config: AppConfig) {
     super()
@@ -93,6 +100,8 @@ export class Store extends EventEmitter {
       mediaIndex: this.mediaIndex,
       projectors: this.projectors,
       mediaRoot: this.config.mediaRoot,
+      videoPaused: this.videoPaused,
+      videoPausedAtMs: this.videoPausedAtMs,
     }
   }
 
@@ -104,29 +113,62 @@ export class Store extends EventEmitter {
   /** Vorlauf, bis Videos einer neuen Epoche starten — Zeit zum Laden/Prerollen. */
   private static readonly VIDEO_PREROLL_MS = 700
 
-  private async cacheFile(rel: string): Promise<void> {
-    const abs = resolveMediaFile(this.config.mediaRoot, rel)
-    if (abs) await ensureCached(this.config.mediaRoot, rel, abs)
+  /** Inhalts-Mutationen nacheinander ausführen (keine Race zwischen Applies). */
+  private serialize<T>(op: () => Promise<T>): Promise<T> {
+    const next = this.mutationChain.then(op, op)
+    this.mutationChain = next.catch(() => {})
+    return next
   }
 
-  async setScreen(screen: ScreenName, content: ScreenContent | null, template: string | null = null): Promise<void> {
-    if (content) {
-      await this.cacheFile(content.file)
-      if (content.kind === 'video' && content.epochMs === undefined) {
-        content = { ...content, epochMs: Date.now() + Store.VIDEO_PREROLL_MS }
-      }
-    }
-    this.screens[screen] = content
-    this.activeTemplate = template
-    this.broadcast()
+  /** Datei in den Schattencache legen; liefert die Version (oder undefined). */
+  private async cacheFile(rel: string): Promise<string | undefined> {
+    const abs = resolveMediaFile(this.config.mediaRoot, rel)
+    if (!abs) return undefined
+    return (await ensureCached(rel, abs)) ?? undefined
+  }
+
+  setScreen(screen: ScreenName, content: ScreenContent | null, template: string | null = null): Promise<void> {
+    return this.setScreens(content ? [screen] : [], content, template, content ? undefined : [screen])
   }
 
   /**
-   * Vorlage anwenden. Lehnt ab, wenn ein Video den Encoding-Kontrakt hart
-   * verletzt (würde auf dem Beamer-PC ruckeln) — ausser mit force.
+   * Mehrere Leinwände in einem Zug auf dieselbe Datei setzen (oder leeren) —
+   * eine gemeinsame Epoche, damit Videos synchron laufen.
    */
-  async applyTemplate(template: TemplateInfo, force = false): Promise<ApplyResult> {
-    if (!force) {
+  setScreens(
+    targets: ScreenName[],
+    content: ScreenContent | null,
+    template: string | null = null,
+    clearTargets: ScreenName[] = [],
+  ): Promise<void> {
+    return this.serialize(async () => {
+      if (content) {
+        const version = await this.cacheFile(content.file)
+        const epochMs =
+          content.kind === 'video' && content.epochMs === undefined
+            ? Date.now() + Store.VIDEO_PREROLL_MS
+            : content.epochMs
+        for (const screen of targets) {
+          this.screens[screen] = { ...content, version, epochMs }
+        }
+      }
+      for (const screen of clearTargets) {
+        this.screens[screen] = null
+      }
+      this.activeTemplate = template
+      // Neuer Inhalt hebt eine globale Video-Pause auf
+      this.videoPaused = false
+      this.videoPausedAtMs = null
+      this.broadcast()
+    })
+  }
+
+  /**
+   * Vorlage anwenden. Nicht abspielbare Videos (Encoding-Kontrakt hart
+   * verletzt) werden IMMER abgelehnt — force überstimmt nur Unvollständigkeit.
+   */
+  applyTemplate(template: TemplateInfo): Promise<ApplyResult> {
+    return this.serialize(async () => {
       const blocked = (Object.keys(template.files) as ScreenName[])
         .map((s) => ({ screen: s, info: template.files[s] }))
         .filter((e) => e.info?.probe && !e.info.probe.playable)
@@ -137,28 +179,85 @@ export class Store extends EventEmitter {
           error: `Nicht abspielbar: ${first?.screen} — ${first?.info?.probe?.warnings[0] ?? 'Kontrakt verletzt'}`,
         }
       }
-    }
 
-    // Erst alle Dateien in den Schattencache, dann in einem Zug umschalten
-    const files = (Object.keys(template.files) as ScreenName[])
-      .map((screen) => ({ screen, info: template.files[screen] }))
-      .filter((e): e is { screen: ScreenName; info: NonNullable<typeof e.info> } => Boolean(e.info))
-    await Promise.all(files.map((e) => this.cacheFile(e.info.file)))
-
-    // Eine gemeinsame Epoche für alle Videos dieser Vorlage → synchroner Start
-    const epochMs = Date.now() + Store.VIDEO_PREROLL_MS
-    for (const { screen, info } of files) {
-      const previous = this.screens[screen]
-      // Läuft schon mit gültiger Epoche → nicht neu starten (Videos ohne Epoche
-      // stammen aus altem Zustand und brauchen einen synchronisierten Neustart)
-      if (previous && previous.file === info.file && (previous.kind !== 'video' || previous.epochMs !== undefined)) {
-        continue
+      // Erst alle Dateien in den Schattencache, dann in einem Zug umschalten
+      const files = (Object.keys(template.files) as ScreenName[])
+        .map((screen) => ({ screen, info: template.files[screen] }))
+        .filter((e): e is { screen: ScreenName; info: NonNullable<typeof e.info> } => Boolean(e.info))
+      const versions = new Map<ScreenName, string | undefined>()
+      for (const { screen, info } of files) {
+        versions.set(screen, await this.cacheFile(info.file))
       }
-      this.screens[screen] = info.kind === 'video' ? { file: info.file, kind: info.kind, epochMs } : { file: info.file, kind: info.kind }
-    }
-    this.activeTemplate = template.name
+
+      // Eine gemeinsame Epoche für alle Videos dieser Vorlage → synchroner Start
+      const epochMs = Date.now() + Store.VIDEO_PREROLL_MS
+      for (const { screen, info } of files) {
+        const version = versions.get(screen)
+        const previous = this.screens[screen]
+        // Identische Datei UND identische Version läuft schon → nicht neu starten
+        // (neue Version = in Nextcloud ersetzte Datei = bewusst neu laden)
+        if (
+          previous &&
+          previous.file === info.file &&
+          previous.version === version &&
+          (previous.kind !== 'video' || previous.epochMs !== undefined)
+        ) {
+          continue
+        }
+        this.screens[screen] =
+          info.kind === 'video'
+            ? { file: info.file, kind: info.kind, epochMs, version, durationS: info.probe?.durationS }
+            : { file: info.file, kind: info.kind, version }
+      }
+      this.activeTemplate = template.name
+      // Neuer Inhalt hebt eine globale Video-Pause auf
+      this.videoPaused = false
+      this.videoPausedAtMs = null
+      this.broadcast()
+      return { ok: true }
+    })
+  }
+
+  // --- Globale Video-Wiedergabe (Pause/Play/Seek über alle Leinwände) ---
+
+  pauseVideo(): void {
+    if (this.videoPaused) return
+    this.videoPaused = true
+    this.videoPausedAtMs = Date.now()
     this.broadcast()
-    return { ok: true }
+  }
+
+  resumeVideo(): void {
+    if (!this.videoPaused) return
+    const pausedForMs = Date.now() - (this.videoPausedAtMs ?? Date.now())
+    // Alle Epochen um die Pausendauer verschieben → jedes Video läuft exakt
+    // dort weiter, wo es stand, und die Synchronität bleibt erhalten
+    for (const screen of SCREEN_NAMES) {
+      const content = this.screens[screen]
+      if (content?.kind === 'video' && content.epochMs !== undefined) {
+        this.screens[screen] = { ...content, epochMs: content.epochMs + pausedForMs }
+      }
+    }
+    this.videoPaused = false
+    this.videoPausedAtMs = null
+    this.broadcast()
+  }
+
+  toggleVideo(): void {
+    if (this.videoPaused) this.resumeVideo()
+    else this.pauseVideo()
+  }
+
+  /** Alle Videos an Position toS (Sekunden in der Loop) springen lassen. */
+  seekVideo(toS: number): void {
+    const base = this.videoPaused ? (this.videoPausedAtMs ?? Date.now()) : Date.now()
+    for (const screen of SCREEN_NAMES) {
+      const content = this.screens[screen]
+      if (content?.kind === 'video') {
+        this.screens[screen] = { ...content, epochMs: base - toS * 1000 }
+      }
+    }
+    this.broadcast()
   }
 
   setBlackout(on: boolean): void {
@@ -191,8 +290,11 @@ export class Store extends EventEmitter {
 
   /** Medienordner umstellen — meldet 'mediaroot-changed', damit der Index neu startet. */
   setMediaRoot(root: string): void {
+    if (root === this.config.mediaRoot) return
     this.config.mediaRoot = root
     saveConfig(this.config)
+    // Cache-Register leeren: rel-Pfade beziehen sich jetzt auf den neuen Ordner
+    clearCacheRegistry()
     this.emit('mediaroot-changed', root)
     this.broadcast()
   }
@@ -200,6 +302,7 @@ export class Store extends EventEmitter {
   setProjectorHost(id: string, host: string): boolean {
     const projector = this.config.projectors.find((p) => p.id === id)
     if (!projector) return false
+    if (projector.host === host) return true
     projector.host = host
     saveConfig(this.config)
     this.emit('projectors-changed', this.config.projectors)
@@ -257,10 +360,17 @@ export class Store extends EventEmitter {
         if (content && typeof content.file === 'string' && kindForFile(content.file)) {
           this.screens[screen] =
             content.kind === 'video'
-              ? { file: content.file, kind: content.kind, epochMs }
-              : { file: content.file, kind: content.kind }
-          // Cache im Hintergrund auffüllen; bis dahin spielt das Original
-          void this.cacheFile(content.file)
+              ? { ...content, epochMs }
+              : { file: content.file, kind: content.kind, version: content.version }
+          // Cache im Hintergrund auffüllen; falls sich die Datei zwischenzeitlich
+          // geändert hat, Version nachziehen und neu verteilen
+          void this.cacheFile(content.file).then((version) => {
+            const current = this.screens[screen]
+            if (version && current && current.file === content.file && current.version !== version) {
+              this.screens[screen] = { ...current, version }
+              this.broadcast()
+            }
+          })
         }
       }
       this.activeTemplate = data.activeTemplate ?? null

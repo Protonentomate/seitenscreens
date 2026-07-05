@@ -41,14 +41,14 @@ function signedModDistance(delta: number, modulus: number): number {
   return r
 }
 
-function wrap(value: number, modulus: number): number {
+export function wrap(value: number, modulus: number): number {
   const r = value % modulus
   return r < 0 ? r + modulus : r
 }
 
 export class SyncController {
   private readonly video: HTMLVideoElement
-  private readonly epochMs: number
+  private epochMs: number
   private readonly screen: string
   private emaErr = 0
   private nextActionAt = 0
@@ -67,6 +67,21 @@ export class SyncController {
 
   stop(): void {
     this.stopped = true
+  }
+
+  getEpoch(): number {
+    return this.epochMs
+  }
+
+  /** Neue Epoche übernehmen (Pause/Resume/Seek) und sofort hinspringen. */
+  setEpoch(epochMs: number): void {
+    if (this.epochMs === epochMs) return
+    this.epochMs = epochMs
+    this.emaErr = 0
+    const duration = this.video.duration
+    if (Number.isFinite(duration) && duration > 0) {
+      this.video.currentTime = wrap((Date.now() - epochMs) / 1000, duration)
+    }
   }
 
   stats(): SyncStats {

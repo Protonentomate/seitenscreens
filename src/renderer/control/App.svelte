@@ -92,14 +92,48 @@
   async function setSingle(file: string, screen: ScreenName | 'alle'): Promise<void> {
     const encoded = encodeURIComponent(file)
     if (screen === 'alle') {
-      let allOk = true
-      for (const s of SCREEN_NAMES) {
-        allOk = (await api(`/api/screen/${s}/set?file=${encoded}`)) && allOk
+      // Ein Batch-Aufruf → eine gemeinsame Epoche → Videos laufen synchron
+      if (await api(`/api/screens/set?file=${encoded}&screens=all`)) {
+        showBanner('ok', `${file} auf allen Leinwänden`)
       }
-      if (allOk) showBanner('ok', `${file} auf allen Leinwänden`)
     } else {
       if (await api(`/api/screen/${screen}/set?file=${encoded}`)) showBanner('ok', `${file} auf ${SHORT[screen]}`)
     }
+  }
+
+  // --- Video-Steuerung (global, ein Regler für alle Leinwände) ---
+
+  const videoContents = $derived(
+    state ? Object.values(state.screens).filter((c) => c?.kind === 'video' && c.epochMs !== undefined) : [],
+  )
+  const videoDuration = $derived(Math.max(0, ...videoContents.map((c) => c?.durationS ?? 0)))
+  let videoPosition = $state(0)
+  let sliderDragging = $state(false)
+
+  // Position tickt lokal aus Epoche+Uhr — kein Server-Polling nötig
+  $effect(() => {
+    if (videoContents.length === 0 || videoDuration <= 0) return
+    const tick = () => {
+      if (sliderDragging || !state) return
+      const first = videoContents[0]
+      if (!first?.epochMs) return
+      const ref = state.videoPaused && state.videoPausedAtMs ? state.videoPausedAtMs : Date.now()
+      const pos = ((ref - first.epochMs) / 1000) % videoDuration
+      videoPosition = pos < 0 ? pos + videoDuration : pos
+    }
+    tick()
+    const interval = setInterval(tick, 250)
+    return () => clearInterval(interval)
+  })
+
+  function fmtTime(s: number): string {
+    const m = Math.floor(s / 60)
+    const sec = Math.floor(s % 60)
+    return `${m}:${String(sec).padStart(2, '0')}`
+  }
+
+  async function seekTo(toS: number): Promise<void> {
+    await api(`/api/video/seek?toS=${toS.toFixed(2)}`)
   }
 
   function openSettings(): void {
@@ -171,6 +205,28 @@
       {/each}
     </section>
 
+    {#if videoContents.length > 0 && videoDuration > 0}
+      <section class="videobar">
+        <button class="big" onclick={() => api('/api/video/toggle')}>
+          {state.videoPaused ? '▶ Weiter' : '⏸ Pause'}
+        </button>
+        <input
+          class="seek"
+          type="range"
+          min="0"
+          max={videoDuration}
+          step="0.05"
+          bind:value={videoPosition}
+          onpointerdown={() => (sliderDragging = true)}
+          onchange={() => {
+            void seekTo(videoPosition)
+            sliderDragging = false
+          }}
+        />
+        <span class="vtime">{fmtTime(videoPosition)} / {fmtTime(videoDuration)}</span>
+      </section>
+    {/if}
+
     <section>
       <h2>Live {state.activeTemplate ? `— ${state.activeTemplate}` : ''}</h2>
       <div class="live">
@@ -186,9 +242,6 @@
             <div class="tilefoot">
               <span class="sname">{SHORT[screen]}</span>
               <span class="fname">{content?.file ?? '—'}</span>
-              {#if content}
-                <button class="mini" title="Leinwand leeren" onclick={() => api(`/api/screen/${screen}/clear`)}>✕</button>
-              {/if}
             </div>
           </div>
         {/each}
@@ -383,6 +436,26 @@
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
+  }
+  .videobar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #1c1f24;
+    border: 1px solid #2c313a;
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-top: 14px;
+  }
+  .seek {
+    flex: 1;
+    accent-color: #3a6fc4;
+  }
+  .vtime {
+    font-size: 13px;
+    color: #aab0b8;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .projector {
     display: flex;

@@ -71,7 +71,9 @@ function parseFps(rate: string | undefined): number {
   return num / den
 }
 
-async function probeVideo(abs: string): Promise<ProbeInfo | null> {
+type ProbeResult = { kind: 'ok'; probe: ProbeInfo } | { kind: 'no-tool' } | { kind: 'broken' }
+
+async function probeVideo(abs: string): Promise<ProbeResult> {
   return new Promise((resolve) => {
     execFile(
       ffprobeBinary(),
@@ -79,18 +81,22 @@ async function probeVideo(abs: string): Promise<ProbeInfo | null> {
       { timeout: 15000 },
       (err, stdout) => {
         if (err) {
-          resolve(null)
+          // ffprobe fehlt (ENOENT) ≠ Datei kaputt (Exit-Code/Timeout) —
+          // nur Ersteres darf im Zweifel durchwinken
+          const code = (err as NodeJS.ErrnoException).code
+          resolve(code === 'ENOENT' ? { kind: 'no-tool' } : { kind: 'broken' })
           return
         }
         try {
           const data = JSON.parse(stdout) as { streams?: FfprobeStream[]; format?: { duration?: string } }
           const video = data.streams?.find((s) => s.codec_type === 'video')
           if (!video) {
-            resolve(null)
+            resolve({ kind: 'broken' })
             return
           }
-          resolve(
-            classify({
+          resolve({
+            kind: 'ok',
+            probe: classify({
               codec: video.codec_name ?? 'unbekannt',
               width: video.width ?? 0,
               height: video.height ?? 0,
@@ -98,9 +104,9 @@ async function probeVideo(abs: string): Promise<ProbeInfo | null> {
               durationS: Number(data.format?.duration ?? 0),
               hasAudio: Boolean(data.streams?.some((s) => s.codec_type === 'audio')),
             }),
-          )
+          })
         } catch {
-          resolve(null)
+          resolve({ kind: 'broken' })
         }
       },
     )
@@ -121,6 +127,10 @@ export class MediaIndex extends EventEmitter {
   private probeCacheDirty = false
   private scanning = false
   private scanQueued = false
+  /** Schutz gegen überlappende start()-Aufrufe (Ordner-Umkonfiguration). */
+  private startGeneration = 0
+  /** Erster ungescannter Watcher-Event — erzwingt Rescan trotz Dauerfeuer. */
+  private oldestPendingEventAt: number | null = null
 
   constructor() {
     super()
@@ -138,7 +148,9 @@ export class MediaIndex extends EventEmitter {
 
   /** Watcher (neu) starten — z.B. wenn der Medienordner umkonfiguriert wurde. */
   async start(root: string): Promise<void> {
+    const generation = ++this.startGeneration
     await this.stop()
+    if (generation !== this.startGeneration) return // ein neuerer start() hat übernommen
     this.root = root
     if (!root) {
       this.snapshot = { templates: [], singles: [], updatedAt: Date.now(), mediaRootExists: false }
@@ -149,7 +161,9 @@ export class MediaIndex extends EventEmitter {
       // Kaltstart bevor Nextcloud gesynct hat: alle 10s prüfen, bis der Ordner da ist
       this.snapshot = { templates: [], singles: [], updatedAt: Date.now(), mediaRootExists: false }
       this.emit('index', this.snapshot)
-      this.waitForRootTimer = setTimeout(() => void this.start(root), 10_000)
+      this.waitForRootTimer = setTimeout(() => {
+        if (generation === this.startGeneration) void this.start(root)
+      }, 10_000)
       return
     }
     this.watcher = chokidar.watch(root, {
@@ -183,8 +197,22 @@ export class MediaIndex extends EventEmitter {
   }
 
   private scheduleRescan(): void {
+    const now = Date.now()
+    if (this.oldestPendingEventAt === null) this.oldestPendingEventAt = now
+    // Max-Wait: ein grosser Nextcloud-Sync feuert minutenlang Events —
+    // das Debounce darf den Index trotzdem nicht komplett aushungern
+    if (now - this.oldestPendingEventAt > 10_000) {
+      if (this.rescanTimer) clearTimeout(this.rescanTimer)
+      this.rescanTimer = null
+      this.oldestPendingEventAt = null
+      void this.rescan()
+      return
+    }
     if (this.rescanTimer) clearTimeout(this.rescanTimer)
-    this.rescanTimer = setTimeout(() => void this.rescan(), 1500)
+    this.rescanTimer = setTimeout(() => {
+      this.oldestPendingEventAt = null
+      void this.rescan()
+    }, 1500)
   }
 
   private async rescan(): Promise<void> {
@@ -225,14 +253,29 @@ export class MediaIndex extends EventEmitter {
       let probe = this.probeCache.get(cacheKey)
       if (!probe) {
         const result = await probeVideo(abs)
-        if (result) {
-          probe = result
-          this.probeCache.set(cacheKey, result)
+        if (result.kind === 'ok') {
+          probe = result.probe
+          this.probeCache.set(cacheKey, probe)
+          this.probeCacheDirty = true
+        } else if (result.kind === 'broken') {
+          // Kaputte/halb-gesyncte Datei: NICHT abspielbar (auch negativ cachen —
+          // eine fertig gesyncte Datei hat neue mtime/size und wird neu geprüft)
+          probe = {
+            codec: 'unbekannt',
+            width: 0,
+            height: 0,
+            fps: 0,
+            durationS: 0,
+            hasAudio: false,
+            playable: false,
+            warnings: ['Datei beschädigt oder unvollständig (Sync noch nicht fertig?)'],
+          }
+          this.probeCache.set(cacheKey, probe)
           this.probeCacheDirty = true
         } else {
-          // ffprobe fehlt oder Datei unlesbar: abspielbar lassen, aber markieren
+          // ffprobe nicht installiert: im Zweifel abspielbar, aber markieren
           probe = classify({ codec: 'h264', width: 0, height: 0, fps: 0, durationS: 0, hasAudio: false })
-          probe.warnings = ['Video konnte nicht geprüft werden (ffprobe nicht verfügbar?)']
+          probe.warnings = ['Video konnte nicht geprüft werden — ffprobe fehlt auf diesem Rechner']
         }
       }
       info.probe = probe

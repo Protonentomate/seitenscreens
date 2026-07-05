@@ -50,6 +50,14 @@ export interface ScreenContent {
    * ist ((jetzt − epochMs) / 1000) mod dauer.
    */
   epochMs?: number
+  /**
+   * Datei-Version (mtime+size). Ersetzt jemand die Datei in Nextcloud, ändert
+   * sich die Version — der Player erkennt den Wechsel und die media://-URL
+   * zeigt auf die richtige Cache-Kopie, ohne laufende Layer umzubiegen.
+   */
+  version?: string
+  /** Loop-Länge in Sekunden (aus ffprobe), für den Video-Slider in der UI. */
+  durationS?: number
 }
 
 /** Ergebnis der ffprobe-Prüfung eines Videos gegen den Encoding-Kontrakt. */
@@ -111,4 +119,8 @@ export interface AppState {
   mediaIndex: MediaIndexSnapshot
   projectors: ProjectorStatus[]
   mediaRoot: string
+  /** Globale Video-Wiedergabe: pausiert alle laufenden Videos gemeinsam. */
+  videoPaused: boolean
+  /** Wanduhr-Zeitpunkt der Pause (definiert die eingefrorene Position). */
+  videoPausedAtMs: number | null
 }

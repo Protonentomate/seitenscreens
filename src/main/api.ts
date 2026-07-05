@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
 import fastifyStatic from '@fastify/static'
+import fastifyCors from '@fastify/cors'
 import { app as electronApp } from 'electron'
 import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
@@ -10,11 +11,18 @@ import type { Store } from './store'
 import { kindForFile } from './store'
 import type { MediaIndex } from './mediaIndex'
 import type { ProjectorManager } from './projectors'
-import { resolveMediaFile, fileResponse } from './media'
-import { isScreenName } from '../shared/screens'
+import { resolveMediaFile, openFileStream, isServableMedia } from './media'
+import { isScreenName, SCREEN_NAMES, type ScreenName } from '../shared/screens'
+import type { MediaFileInfo } from '../shared/types'
 
 function ffmpegBinary(): string {
   return process.env.SEITENSCREENS_FFMPEG || 'ffmpeg'
+}
+
+function toolAvailable(binary: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile(binary, ['-version'], { timeout: 5000 }, (err) => resolve(!err))
+  })
 }
 
 /**
@@ -24,9 +32,19 @@ function ffmpegBinary(): string {
  */
 export async function startApi(store: Store, index: MediaIndex, projectors: ProjectorManager): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
+  // Im Dev-Modus läuft die UI auf dem Vite-Port (5173), die API auf 8080 —
+  // ohne CORS blockt der Browser die Antworten ("Failed to fetch"), obwohl
+  // die Aktion ausgeführt wurde.
+  await app.register(fastifyCors, { origin: true })
   await app.register(fastifyWebsocket)
 
   const ok = (extra: Record<string, unknown> = {}) => ({ ok: true, ...extra, state: store.snapshot() })
+
+  // Werkzeug-Verfügbarkeit einmal beim Start prüfen (Preflight/Health)
+  const tools = {
+    ffmpeg: await toolAvailable(ffmpegBinary()),
+    ffprobe: await toolAvailable(process.env.SEITENSCREENS_FFPROBE || 'ffprobe'),
+  }
 
   // --- Zustand & Gesundheit ---
 
@@ -46,6 +64,7 @@ export async function startApi(store: Store, index: MediaIndex, projectors: Proj
       mediaRootConfigured: Boolean(mediaRoot),
       mediaRootExists,
       templates: index.getSnapshot().templates.length,
+      tools,
     }
   })
 
@@ -85,7 +104,7 @@ export async function startApi(store: Store, index: MediaIndex, projectors: Proj
           error: `Vorlage unvollständig (${template.warnings[0] ?? ''}) — mit ?force=1 werden nur die vorhandenen Leinwände gewechselt`,
         })
       }
-      const result = await store.applyTemplate(template, force)
+      const result = await store.applyTemplate(template)
       if (!result.ok) {
         return reply.status(409).send({ ok: false, error: result.error })
       }
@@ -93,30 +112,80 @@ export async function startApi(store: Store, index: MediaIndex, projectors: Proj
     },
   })
 
+  /** Datei im Index suchen (für den Playable-Gate auch bei Einzelbildern). */
+  const findInIndex = (rel: string): MediaFileInfo | null => {
+    const snap = index.getSnapshot()
+    const single = snap.singles.find((s) => s.file === rel)
+    if (single) return single
+    for (const t of snap.templates) {
+      for (const screen of SCREEN_NAMES) {
+        const f = t.files[screen]
+        if (f && f.file === rel) return f
+      }
+    }
+    return null
+  }
+
+  const validateFileParam = (rawFile: string | undefined): { file?: string; error?: string; status?: number } => {
+    if (!rawFile) return { error: 'Parameter file fehlt', status: 400 }
+    const file = rawFile.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/^\/+/, '')
+    const kind = kindForFile(file)
+    if (!kind) return { error: `Nicht unterstütztes Format: ${file}`, status: 400 }
+    if (!resolveMediaFile(store.getConfig().mediaRoot, file)) {
+      return { error: `Datei nicht gefunden: ${file}`, status: 404 }
+    }
+    // Encoding-Kontrakt gilt auch für Einzel-Zuweisungen, nicht nur Vorlagen
+    const info = findInIndex(file)
+    if (info?.probe && !info.probe.playable) {
+      return { error: `Nicht abspielbar: ${info.probe.warnings[0] ?? 'Kontrakt verletzt'}`, status: 409 }
+    }
+    return { file }
+  }
+
+  const contentFor = (file: string) => {
+    const info = findInIndex(file)
+    return {
+      file,
+      kind: kindForFile(file)!,
+      durationS: info?.probe?.durationS,
+    }
+  }
+
   app.route({
     method: ['GET', 'POST'],
     url: '/api/screen/:screen/set',
     handler: async (req, reply) => {
       const { screen } = req.params as { screen: string }
-      const rawFile = (req.query as Record<string, string>).file
       if (!isScreenName(screen)) {
         return reply.status(404).send({ ok: false, error: `Unbekannte Leinwand: ${screen}` })
       }
-      if (!rawFile) {
-        return reply.status(400).send({ ok: false, error: 'Parameter file fehlt' })
+      const check = validateFileParam((req.query as Record<string, string>).file)
+      if (check.error) return reply.status(check.status ?? 400).send({ ok: false, error: check.error })
+      await store.setScreen(screen, contentFor(check.file!))
+      return ok()
+    },
+  })
+
+  /**
+   * Mehrere Leinwände in einem Zug — EINE gemeinsame Epoche, damit Videos
+   * synchron starten. screens=all oder Komma-Liste (LinksLinks,RechtsRechts).
+   */
+  app.route({
+    method: ['GET', 'POST'],
+    url: '/api/screens/set',
+    handler: async (req, reply) => {
+      const query = req.query as Record<string, string>
+      const screensParam = query.screens ?? 'all'
+      const targets: ScreenName[] =
+        screensParam === 'all'
+          ? [...SCREEN_NAMES]
+          : screensParam.split(',').filter(isScreenName)
+      if (targets.length === 0) {
+        return reply.status(400).send({ ok: false, error: 'Keine gültigen Leinwände in screens=' })
       }
-      // Pfad normalisieren (Backslashes, Doppel-Slashes) und prüfen, dass die
-      // Datei wirklich unter mediaRoot existiert — sonst würde ein Tippfehler
-      // im Stream-Deck-Button die Leinwand kommentarlos schwarz schalten
-      const file = rawFile.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/^\/+/, '')
-      const kind = kindForFile(file)
-      if (!kind) {
-        return reply.status(400).send({ ok: false, error: `Nicht unterstütztes Format: ${file}` })
-      }
-      if (!resolveMediaFile(store.getConfig().mediaRoot, file)) {
-        return reply.status(404).send({ ok: false, error: `Datei nicht gefunden: ${file}` })
-      }
-      await store.setScreen(screen, { file, kind })
+      const check = validateFileParam(query.file)
+      if (check.error) return reply.status(check.status ?? 400).send({ ok: false, error: check.error })
+      await store.setScreens(targets, contentFor(check.file!))
       return ok()
     },
   })
@@ -134,7 +203,7 @@ export async function startApi(store: Store, index: MediaIndex, projectors: Proj
     },
   })
 
-  // --- Blackout & Testbild ---
+  // --- Blackout, Testbild & Video-Wiedergabe ---
 
   app.route({
     method: ['GET', 'POST'],
@@ -161,19 +230,42 @@ export async function startApi(store: Store, index: MediaIndex, projectors: Proj
     },
   })
 
+  app.route({
+    method: ['GET', 'POST'],
+    url: '/api/video/:action',
+    handler: async (req, reply) => {
+      const { action } = req.params as { action: string }
+      if (action === 'pause') store.pauseVideo()
+      else if (action === 'play') store.resumeVideo()
+      else if (action === 'toggle') store.toggleVideo()
+      else if (action === 'seek') {
+        const toS = Number((req.query as Record<string, string>).toS)
+        if (!Number.isFinite(toS) || toS < 0) {
+          return reply.status(400).send({ ok: false, error: 'Parameter toS (Sekunden) fehlt oder ungültig' })
+        }
+        store.seekVideo(toS)
+      } else return reply.status(404).send({ ok: false, error: 'play|pause|toggle|seek erwartet' })
+      return ok()
+    },
+  })
+
   // --- Beamer ein/aus (control_cgi, wie die bisherigen Stream-Deck-Buttons) ---
+
+  const projectorAction = async (id: string | 'all', action: string) => {
+    if (action !== 'on' && action !== 'off') return { status: 404, error: 'on|off erwartet' }
+    const result = await projectors.setPower(id, action === 'on')
+    store.setProjectors(projectors.list())
+    if (!result.ok) return { status: 502, error: result.errors.join(' / ') }
+    return { status: 200 }
+  }
 
   app.route({
     method: ['GET', 'POST'],
     url: '/api/projector/:action',
     handler: async (req, reply) => {
       const { action } = req.params as { action: string }
-      if (action !== 'on' && action !== 'off') {
-        return reply.status(404).send({ ok: false, error: 'on|off erwartet' })
-      }
-      const result = await projectors.setPower('all', action === 'on')
-      store.setProjectors(projectors.list())
-      if (!result.ok) return reply.status(502).send({ ok: false, error: result.errors.join(' / ') })
+      const result = await projectorAction('all', action)
+      if (result.error) return reply.status(result.status).send({ ok: false, error: result.error })
       return ok()
     },
   })
@@ -183,12 +275,8 @@ export async function startApi(store: Store, index: MediaIndex, projectors: Proj
     url: '/api/projector/:id/:action',
     handler: async (req, reply) => {
       const { id, action } = req.params as { id: string; action: string }
-      if (action !== 'on' && action !== 'off') {
-        return reply.status(404).send({ ok: false, error: 'on|off erwartet' })
-      }
-      const result = await projectors.setPower(id, action === 'on')
-      store.setProjectors(projectors.list())
-      if (!result.ok) return reply.status(502).send({ ok: false, error: result.errors.join(' / ') })
+      const result = await projectorAction(id, action)
+      if (result.error) return reply.status(result.status).send({ ok: false, error: result.error })
       return ok()
     },
   })
@@ -208,73 +296,145 @@ export async function startApi(store: Store, index: MediaIndex, projectors: Proj
   })
 
   app.post('/api/config', async (req, reply) => {
-    const body = req.body as { mediaRoot?: string; transitionMs?: number; projectors?: Array<{ id: string; host: string }> }
+    const body = req.body as
+      | { mediaRoot?: string; transitionMs?: number; projectors?: Array<{ id: string; host: string }> }
+      | null
+      | undefined
+    if (!body || typeof body !== 'object') {
+      return reply.status(400).send({ ok: false, error: 'JSON-Body erwartet' })
+    }
+
+    // Phase 1: ALLES validieren, bevor irgendetwas gespeichert wird —
+    // sonst meldet die UI einen Fehler, obwohl die Hälfte übernommen wurde
+    let newMediaRoot: string | undefined
     if (body.mediaRoot !== undefined) {
-      const root = body.mediaRoot.trim()
-      if (root && !fs.existsSync(root)) {
-        return reply.status(400).send({ ok: false, error: `Ordner existiert nicht: ${root}` })
-      }
-      if (root && !fs.statSync(root).isDirectory()) {
-        return reply.status(400).send({ ok: false, error: `Kein Ordner: ${root}` })
-      }
-      store.setMediaRoot(root)
-    }
-    if (body.transitionMs !== undefined) {
-      const ms = Number(body.transitionMs)
-      if (!Number.isFinite(ms) || ms < 0 || ms > 5000) {
-        return reply.status(400).send({ ok: false, error: 'transitionMs muss zwischen 0 und 5000 liegen' })
-      }
-      store.setTransitionMs(ms)
-    }
-    if (body.projectors) {
-      for (const p of body.projectors) {
-        if (typeof p.id === 'string' && typeof p.host === 'string') {
-          store.setProjectorHost(p.id, p.host.trim())
+      newMediaRoot = body.mediaRoot.trim()
+      if (newMediaRoot && newMediaRoot !== store.getConfig().mediaRoot) {
+        try {
+          if (!fs.statSync(newMediaRoot).isDirectory()) {
+            return reply.status(400).send({ ok: false, error: `Kein Ordner: ${newMediaRoot}` })
+          }
+        } catch {
+          return reply.status(400).send({ ok: false, error: `Ordner existiert nicht: ${newMediaRoot}` })
         }
       }
     }
+    let newTransitionMs: number | undefined
+    if (body.transitionMs !== undefined && body.transitionMs !== null) {
+      newTransitionMs = Number(body.transitionMs)
+      if (!Number.isFinite(newTransitionMs) || newTransitionMs < 0 || newTransitionMs > 5000) {
+        return reply.status(400).send({ ok: false, error: 'Überblendung muss zwischen 0 und 5000 ms liegen' })
+      }
+    }
+    const newProjectors: Array<{ id: string; host: string }> = []
+    if (body.projectors) {
+      if (!Array.isArray(body.projectors)) {
+        return reply.status(400).send({ ok: false, error: 'projectors muss eine Liste sein' })
+      }
+      for (const p of body.projectors) {
+        if (typeof p?.id !== 'string' || typeof p?.host !== 'string') {
+          return reply.status(400).send({ ok: false, error: 'Beamer-Eintrag braucht id und host' })
+        }
+        newProjectors.push({ id: p.id, host: p.host.trim() })
+      }
+    }
+
+    // Phase 2: anwenden
+    if (newMediaRoot !== undefined) store.setMediaRoot(newMediaRoot)
+    if (newTransitionMs !== undefined) store.setTransitionMs(newTransitionMs)
+    for (const p of newProjectors) store.setProjectorHost(p.id, p.host)
     return ok()
   })
 
   // --- Medien & Thumbnails für die Control-UI ---
+  // Hinweis: fastify dekodiert den Wildcard-Parameter bereits einmal —
+  // ein weiteres decodeURIComponent würde %-Dateinamen kaputtmachen.
 
   app.get('/media/*', async (req, reply) => {
-    const rel = decodeURIComponent((req.params as Record<string, string>)['*'] ?? '')
+    const rel = (req.params as Record<string, string>)['*'] ?? ''
+    if (!isServableMedia(rel)) return reply.status(404).send({ ok: false, error: 'Kein Medientyp' })
     const abs = resolveMediaFile(store.getConfig().mediaRoot, rel)
     if (!abs) return reply.status(404).send({ ok: false, error: 'Nicht gefunden' })
-    const res = fileResponse(abs, req.headers.range ?? null)
-    reply.status(res.status)
-    res.headers.forEach((value, key) => reply.header(key, value))
-    return reply.send(res.body ? Buffer.from(await res.arrayBuffer()) : undefined)
+    // Streamen, nie puffern — ein 200-MB-Video darf den RAM nicht fluten
+    const { status, headers, stream } = openFileStream(abs, req.headers.range ?? null)
+    reply.status(status)
+    for (const [key, value] of Object.entries(headers)) reply.header(key, value)
+    return reply.send(stream ?? undefined)
   })
 
   /** Poster-Frame für Videos, gecacht in userData/thumbs (Bilder skaliert der Browser selbst). */
+  const thumbsInFlight = new Map<string, Promise<boolean>>()
+  const thumbsDir = path.join(electronApp.getPath('userData'), 'thumbs')
+
   app.get('/thumbs/*', async (req, reply) => {
-    const rel = decodeURIComponent((req.params as Record<string, string>)['*'] ?? '')
+    const rel = (req.params as Record<string, string>)['*'] ?? ''
     const abs = resolveMediaFile(store.getConfig().mediaRoot, rel)
     if (!abs) return reply.status(404).send({ ok: false, error: 'Nicht gefunden' })
 
     const stat = fs.statSync(abs)
     const key = crypto.createHash('sha1').update(`${rel}|${Math.round(stat.mtimeMs)}|${stat.size}`).digest('hex').slice(0, 20)
-    const thumbsDir = path.join(electronApp.getPath('userData'), 'thumbs')
     const thumbPath = path.join(thumbsDir, `${key}.jpg`)
 
     if (!fs.existsSync(thumbPath)) {
-      fs.mkdirSync(thumbsDir, { recursive: true })
-      const okThumb = await new Promise<boolean>((resolve) => {
-        execFile(
-          ffmpegBinary(),
-          ['-y', '-ss', '1', '-i', abs, '-frames:v', '1', '-vf', 'scale=270:-2', '-q:v', '5', thumbPath],
-          { timeout: 20000 },
-          (err) => resolve(!err),
-        )
-      })
+      // Parallele Anfragen fürs gleiche Video teilen sich EINEN ffmpeg-Lauf
+      let job = thumbsInFlight.get(key)
+      if (!job) {
+        job = new Promise<boolean>((resolve) => {
+          fs.mkdirSync(thumbsDir, { recursive: true })
+          const tmp = path.join(thumbsDir, `.${key}-${process.pid}.tmp.jpg`)
+          execFile(
+            ffmpegBinary(),
+            ['-y', '-ss', '1', '-i', abs, '-frames:v', '1', '-vf', 'scale=270:-2', '-q:v', '5', tmp],
+            { timeout: 20000 },
+            (err) => {
+              if (err || !fs.existsSync(tmp)) {
+                fs.rmSync(tmp, { force: true })
+                resolve(false)
+                return
+              }
+              try {
+                fs.renameSync(tmp, thumbPath)
+                resolve(true)
+              } catch {
+                fs.rmSync(tmp, { force: true })
+                resolve(fs.existsSync(thumbPath))
+              }
+            },
+          )
+        }).finally(() => {
+          thumbsInFlight.delete(key)
+          void pruneThumbs()
+        })
+        thumbsInFlight.set(key, job)
+      }
+      const okThumb = await job
       if (!okThumb) return reply.status(404).send({ ok: false, error: 'Kein Thumbnail möglich' })
     }
     reply.header('Content-Type', 'image/jpeg')
+    reply.header('X-Content-Type-Options', 'nosniff')
     reply.header('Cache-Control', 'max-age=86400')
     return reply.send(fs.createReadStream(thumbPath))
   })
+
+  async function pruneThumbs(): Promise<void> {
+    try {
+      const entries = await fs.promises.readdir(thumbsDir)
+      if (entries.length <= 300) return
+      const stats = await Promise.all(
+        entries.map(async (name) => {
+          const p = path.join(thumbsDir, name)
+          const st = await fs.promises.stat(p).catch(() => null)
+          return st ? { p, mtimeMs: st.mtimeMs } : null
+        }),
+      )
+      const sorted = stats.filter((s): s is NonNullable<typeof s> => s !== null).sort((a, b) => a.mtimeMs - b.mtimeMs)
+      for (const s of sorted.slice(0, sorted.length - 300)) {
+        await fs.promises.unlink(s.p).catch(() => {})
+      }
+    } catch {
+      // Aufräumen darf nie stören
+    }
+  }
 
   // --- Control-UI ausliefern ---
 

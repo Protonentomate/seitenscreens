@@ -9,33 +9,49 @@ import crypto from 'node:crypto'
  * ersetzen, ohne auf gesperrte, gerade abgespielte Dateien zu treffen —
  * und ein Sync mitten im Gottesdienst kann laufende Inhalte nicht zerstören.
  *
- * Schlüssel: relPath + mtime + size — eine geänderte Datei ergibt einen neuen
- * Cache-Eintrag, der beim nächsten Anwenden gezogen wird.
+ * Versionierung: Schlüssel ist rel+version (version = mtime+size). Eine in
+ * Nextcloud ersetzte Datei ergibt eine NEUE Version mit eigener Cache-Kopie;
+ * ein noch laufender Layer spielt seine alte Kopie ungestört zu Ende, weil
+ * seine media://-URL die alte Version trägt.
  */
 
 const MAX_CACHE_FILES = 60
+/** Pro Datei die letzten N Versionen im Register behalten (alte Layer). */
+const KEEP_VERSIONS_PER_FILE = 2
 
 function cacheDir(): string {
   return path.join(app.getPath('userData'), 'cache')
 }
 
-/** rel → aktueller Cache-Pfad, damit der media://-Handler synchron nachschlagen kann. */
+/** `${rel}|${version}` → Cache-Pfad, für synchronen Lookup im media://-Handler. */
 const activeCache = new Map<string, string>()
 
-export function cachedPathFor(rel: string): string | null {
-  const cached = activeCache.get(rel)
+export function versionOf(stat: { mtimeMs: number; size: number }): string {
+  return `${Math.round(stat.mtimeMs)}-${stat.size}`
+}
+
+export function cachedPathFor(rel: string, version: string | null): string | null {
+  if (!version) return null
+  const cached = activeCache.get(`${rel}|${version}`)
   if (cached && fs.existsSync(cached)) return cached
   return null
 }
 
-/** Datei in den Cache kopieren (falls nötig) und für media:// registrieren. */
-export async function ensureCached(mediaRoot: string, rel: string, absSource: string): Promise<void> {
+export function clearCacheRegistry(): void {
+  activeCache.clear()
+}
+
+/**
+ * Datei in den Cache kopieren (falls nötig) und registrieren.
+ * Liefert die Version oder null (Fehler → es wird vom Original gespielt).
+ */
+export async function ensureCached(rel: string, absSource: string): Promise<string | null> {
   try {
     const stat = await fs.promises.stat(absSource)
+    const version = versionOf(stat)
     const hash = crypto.createHash('sha1').update(rel).digest('hex').slice(0, 16)
     const ext = path.extname(rel).toLowerCase()
-    const name = `${hash}-${Math.round(stat.mtimeMs)}-${stat.size}${ext}`
-    const dest = path.join(cacheDir(), name)
+    const dest = path.join(cacheDir(), `${hash}-${version}${ext}`)
 
     if (!fs.existsSync(dest)) {
       await fs.promises.mkdir(cacheDir(), { recursive: true })
@@ -47,12 +63,27 @@ export async function ensureCached(mediaRoot: string, rel: string, absSource: st
       const now = new Date()
       await fs.promises.utimes(dest, now, now).catch(() => {})
     }
-    activeCache.set(rel, dest)
+    activeCache.set(`${rel}|${version}`, dest)
+    trimVersions(rel)
     void pruneCache()
+    return version
   } catch (err) {
-    // Cache ist eine Optimierung — bei Fehlern wird direkt vom Original gespielt
     console.warn('[cache] Kopie fehlgeschlagen, spiele vom Original:', rel, err)
-    activeCache.delete(rel)
+    return null
+  }
+}
+
+/** Nur die neuesten Versionen pro Datei im Register behalten. */
+function trimVersions(rel: string): void {
+  const prefix = `${rel}|`
+  const keys = [...activeCache.keys()].filter((k) => k.startsWith(prefix))
+  if (keys.length <= KEEP_VERSIONS_PER_FILE) return
+  // Version beginnt mit mtimeMs → lexikalisch sortierbar bei gleicher Länge;
+  // zur Sicherheit numerisch nach mtime sortieren
+  const byMtime = (k: string) => Number(k.slice(prefix.length).split('-')[0]) || 0
+  keys.sort((a, b) => byMtime(a) - byMtime(b))
+  for (const key of keys.slice(0, keys.length - KEEP_VERSIONS_PER_FILE)) {
+    activeCache.delete(key)
   }
 }
 
