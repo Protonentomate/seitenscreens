@@ -42,16 +42,31 @@ npm start
 1. Es öffnen sich zwei Vollbild-Fenster auf den Beamern (bei nur einem
    Bildschirm: Simulator-Fenster).
 2. Browser auf **http://localhost:8080** (oder von einem anderen Gerät:
-   `http://<IP-des-PCs>:8080`).
-3. **⚙︎ Einstellungen** → „Medienordner" auf den Nextcloud-`_Vorlagen`-Pfad
-   setzen, z.B. `C:\Users\Techniker\Nextcloud\Technische Dienste\Licht_Video\SeitenScreens\_Vorlagen`
+   `http://<IP-des-PCs>:8080`) — das ist die Anwender-Seite für den
+   Sonntagsbetrieb. Upload, Inhalte-Verwaltung (Papierkorb), Kalibrierung,
+   Display-Zuordnung und Einstellungen liegen auf der Admin-Seite
+   **http://localhost:8080/admin** (Link „Verwaltung →" oben rechts).
+3. **`/admin` → Tab „Einstellungen"** → „Medienordner" auf den
+   Nextcloud-`_Vorlagen`-Pfad setzen, z.B.
+   `C:\Users\Techniker\Nextcloud\Technische Dienste\Licht_Video\SeitenScreens\_Vorlagen`
+   Ebenfalls dort: **Wand-Layout** — Leinwand-Abstände und Höhenversatz je
+   Leinwand (positiv = hängt tiefer) in der Kirche ausmessen und eintragen;
+   beides fliesst ins geometrisch korrekte Spannen beim Upload (aktuell
+   Platzhalter 0).
 4. Beamer-IPs prüfen (Standard: links 192.168.100.95, rechts 192.168.100.96).
-5. Kalibrierung: kommt aus dem OBS-Import bzw. wird mit M5 direkt in der
-   Web-UI justierbar. Import vom alten OBS-Export:
+5. **`/admin` → Tab „Anzeige"**: pro Beamer-Fenster das physische Display
+   (HDMI/DisplayPort-Ausgang) wählen — „Fenster identifizieren" blendet 4 s
+   gross links/rechts ein. Kopfüber montierte Beamer um 180° drehen.
+   Kein Fenster-Verschieben von Hand mehr nötig; die Zuordnung wird
+   gespeichert und beim Start berücksichtigt.
+6. Kalibrierung: kommt aus dem OBS-Import und lässt sich unter
+   **`/admin` → Tab „Kalibrierung"** direkt nachjustieren (Ecken ziehen,
+   Pfeiltasten = 1 px, Shift = 10 px, Alt = 0,1 px; Änderungen erscheinen
+   sofort auf den Leinwänden). Import vom alten OBS-Export:
    `npm run import-streamfx -- --obs <export.json> --config <pfad-zur-config>`
    (Config-Pfad steht in `/api/health` → `mediaRoot` daneben; Standard:
    `%APPDATA%\seitenscreens\config.json`)
-6. **Testbild** in der UI einschalten und prüfen, ob die Quads auf den
+7. **Testbild** in der UI einschalten und prüfen, ob die Quads auf den
    Leinwänden sitzen.
 
 ## 4. Windows-Firewall
@@ -80,6 +95,12 @@ oder den fertigen Link aus `/api/templates` kopieren.
 Die alten Beamer-ein/aus-Knöpfe (direkt auf `…/form/control_cgi`)
 funktionieren unverändert weiter.
 
+Vorlagen in Gruppen (Unterordner in `_Vorlagen`, z.B. `Pimi/Scene 1`):
+`/api/template/{Name}/apply` funktioniert nur, solange der Name über alle
+Gruppen eindeutig ist (sonst Antwort 409 mit Kandidatenliste) — im Zweifel
+die Gruppe mit in die URL nehmen:
+`http://<PC-IP>:8080/api/template/Pimi/Scene%201/apply`
+
 ## 6. Autostart *(bis M6: manuell einrichten)*
 
 Aufgabenplanung (`taskschd.msc`) → Einfache Aufgabe:
@@ -91,7 +112,8 @@ Aufgabenplanung (`taskschd.msc`) → Einfache Aufgabe:
   Windows-Update-Nutzungszeit über die Gottesdienstzeiten legen
 
 M6 bringt: Ein-Klick-Installer, sauberen Autostart, Preflight-Ampel
-(Sonntagmorgen-Check), Display-Zuordnung mit Identify/Tausch in der UI.
+(Sonntagmorgen-Check). Die Display-Zuordnung mit Identify/Tausch ist
+bereits da (`/admin` → Tab „Anzeige").
 
 ## 7. Zurück zu OBS (Notfall-Rollback)
 
@@ -107,7 +129,7 @@ Das alte Setup bleibt installiert. Falls nötig:
 |---|---|
 | Steuerung nicht erreichbar | Firewall-Regel? Richtige IP? `http://localhost:8080/api/health` direkt am PC |
 | „Medienordner nicht gefunden" | Nextcloud fertig gesynct? Pfad in Einstellungen korrekt? |
-| Video spielt nicht / Warnung ⚠ | Badge-Text lesen: kaputte Datei, 60 fps oder falscher Codec → über Verwaltung neu verarbeiten (M4) |
+| Video spielt nicht / Warnung ⚠ | Badge-Text lesen: kaputte Datei, 60 fps oder falscher Codec → über die Verwaltung neu hochladen (`/admin` → Hochladen) |
 | Videos ruckeln | `/api/health` → `tools` ok? Hardware-Decode-Check kommt mit M6-Preflight |
 | Beamer „!" | IP korrekt? Beamer im selben Netz? Webinterface `http://<beamer-ip>` erreichbar? |
-| Bild auf falschem Beamer | Bis M6: Windows-Anzeigeeinstellungen → Monitore 1/2 tauschen; ab M6 Knopf in der UI |
+| Bild auf falschem Beamer | `/admin` → Tab „Anzeige" → Displays zuordnen („Fenster identifizieren" hilft) |

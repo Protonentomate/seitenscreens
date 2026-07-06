@@ -12,7 +12,7 @@ import { kindForFile } from './store'
 const EXTENSION_PRIORITY = ['.mp4', '.webm', '.png', '.jpg', '.jpeg', '.webp']
 
 /** Ordner, die nie als Vorlage gelten (Altlasten + interne Ordner). */
-const IGNORED_DIR_PATTERN = /^(_|\.|archiv$|serie)/i
+export const IGNORED_DIR_PATTERN = /^(_|\.|archiv$|serie)/i
 
 /**
  * Encoding-Kontrakt für Videos. Direkt in Nextcloud abgelegte Dateien umgehen
@@ -141,9 +141,32 @@ export class MediaIndex extends EventEmitter {
     return this.snapshot
   }
 
-  getTemplate(name: string): TemplateInfo | null {
-    const wanted = name.normalize('NFC')
-    return this.snapshot.templates.find((t) => t.name.normalize('NFC') === wanted) ?? null
+  /**
+   * Vorlage per Referenz auflösen: "Gruppe/Name" exakt, oder nur "Name",
+   * wenn er über alle Gruppen eindeutig ist (Stream-Deck-Buttons bleiben
+   * kurz). Bei Mehrdeutigkeit kommen die Kandidaten zurück statt geraten wird.
+   */
+  resolveTemplate(ref: string): { template?: TemplateInfo; ambiguous?: string[] } {
+    const wanted = ref.normalize('NFC')
+    const exact = this.snapshot.templates.find((t) => t.ref.normalize('NFC') === wanted)
+    if (exact) return { template: exact }
+    const byName = this.snapshot.templates.filter((t) => t.name.normalize('NFC') === wanted)
+    if (byName.length === 1) return { template: byName[0] }
+    if (byName.length > 1) return { ambiguous: byName.map((t) => t.ref) }
+    // Letzte Stufe: case-insensitiv (der Beamer-PC ist Windows/NTFS —
+    // Stream-Deck-URLs sollen nicht an der Schreibweise scheitern)
+    const lower = wanted.toLowerCase()
+    const ciRef = this.snapshot.templates.filter((t) => t.ref.normalize('NFC').toLowerCase() === lower)
+    if (ciRef.length === 1) return { template: ciRef[0] }
+    if (ciRef.length > 1) return { ambiguous: ciRef.map((t) => t.ref) }
+    const ciName = this.snapshot.templates.filter((t) => t.name.normalize('NFC').toLowerCase() === lower)
+    if (ciName.length === 1) return { template: ciName[0] }
+    if (ciName.length > 1) return { ambiguous: ciName.map((t) => t.ref) }
+    return {}
+  }
+
+  getTemplate(ref: string): TemplateInfo | null {
+    return this.resolveTemplate(ref).template ?? null
   }
 
   /** Watcher (neu) starten — z.B. wenn der Medienordner umkonfiguriert wurde. */
@@ -167,7 +190,8 @@ export class MediaIndex extends EventEmitter {
       return
     }
     this.watcher = chokidar.watch(root, {
-      depth: 1,
+      // Tiefe 2: Wurzel → Gruppen-Ordner → Vorlagen-Ordner → Dateien
+      depth: 2,
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 2000, pollInterval: 200 },
       ignored: (p) => {
@@ -184,6 +208,19 @@ export class MediaIndex extends EventEmitter {
     })
     this.watcher.on('all', () => this.scheduleRescan())
     this.watcher.on('error', (err) => console.warn('[index] Watcher-Fehler:', err))
+    await this.rescan()
+  }
+
+  /** Sofortiger Rescan (z.B. nach einem Ingest, ohne aufs Debounce zu warten). */
+  async rescanNow(): Promise<void> {
+    if (this.rescanTimer) clearTimeout(this.rescanTimer)
+    this.rescanTimer = null
+    this.oldestPendingEventAt = null
+    // Läuft gerade ein (älterer) Scan, erst dessen Ende abwarten — der
+    // anschliessende eigene Scan sieht dann sicher die neuen Dateien
+    while (this.scanning) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
     await this.rescan()
   }
 
@@ -283,6 +320,16 @@ export class MediaIndex extends EventEmitter {
     return info
   }
 
+  /**
+   * Ordner-Konvention mit Gruppen:
+   * - Datei in der Wurzel → Einzelbild (Gruppe '')
+   * - Wurzel-Ordner MIT Leinwand-Dateien (LinksLinks.* …) → Vorlage ohne
+   *   Gruppe (bisherige Struktur, bleibt kompatibel)
+   * - Wurzel-Ordner OHNE Leinwand-Dateien → Gruppe; seine Unterordner sind
+   *   Vorlagen, seine losen Dateien Einzelbilder der Gruppe
+   * - "_Papierkorb" (und alles mit _/.-Präfix, "archiv", "serie") wird
+   *   ignoriert — dorthin verschiebt die Admin-UI Gelöschtes
+   */
   private async buildSnapshot(): Promise<MediaIndexSnapshot> {
     const templates: TemplateInfo[] = []
     const singles: MediaFileInfo[] = []
@@ -293,8 +340,31 @@ export class MediaIndex extends EventEmitter {
       for (const entry of entries) {
         if (entry.isDirectory()) {
           if (IGNORED_DIR_PATTERN.test(entry.name)) continue
-          const template = await this.scanTemplate(entry.name)
-          if (template) templates.push(template)
+          const template = await this.scanTemplate(entry.name, '')
+          if (template) {
+            templates.push(template)
+            continue
+          }
+          // Keine Leinwand-Dateien direkt im Ordner → als Gruppe scannen
+          let subEntries: fs.Dirent[]
+          try {
+            subEntries = await fs.promises.readdir(path.join(this.root, entry.name), { withFileTypes: true })
+          } catch {
+            continue
+          }
+          for (const sub of subEntries) {
+            if (sub.isDirectory()) {
+              if (IGNORED_DIR_PATTERN.test(sub.name)) continue
+              const grouped = await this.scanTemplate(`${entry.name}/${sub.name}`, entry.name)
+              if (grouped) templates.push(grouped)
+            } else if (sub.isFile()) {
+              // Lose Dateien in einer Gruppe = Einzelbilder dieser Gruppe
+              if (sub.name.startsWith('.') || sub.name.startsWith('_')) continue
+              if (!EXTENSION_PRIORITY.includes(path.extname(sub.name).toLowerCase())) continue
+              const info = await this.fileInfo(`${entry.name}/${sub.name}`)
+              if (info) singles.push(info)
+            }
+          }
         } else if (entry.isFile()) {
           if (entry.name.startsWith('.') || entry.name.startsWith('_')) continue
           if (!EXTENSION_PRIORITY.includes(path.extname(entry.name).toLowerCase())) continue
@@ -304,13 +374,13 @@ export class MediaIndex extends EventEmitter {
       }
     }
 
-    templates.sort((a, b) => a.name.localeCompare(b.name, 'de', { numeric: true }))
+    templates.sort((a, b) => a.ref.localeCompare(b.ref, 'de', { numeric: true }))
     singles.sort((a, b) => a.file.localeCompare(b.file, 'de', { numeric: true }))
     return { templates, singles, updatedAt: Date.now(), mediaRootExists: rootExists }
   }
 
-  private async scanTemplate(dirName: string): Promise<TemplateInfo | null> {
-    const dir = path.join(this.root, dirName)
+  private async scanTemplate(relDir: string, group: string): Promise<TemplateInfo | null> {
+    const dir = path.join(this.root, relDir)
     let entries: string[]
     try {
       entries = await fs.promises.readdir(dir)
@@ -323,7 +393,7 @@ export class MediaIndex extends EventEmitter {
       for (const ext of EXTENSION_PRIORITY) {
         const actual = lower.get((screen + ext).toLowerCase())
         if (actual) {
-          const info = await this.fileInfo(`${dirName}/${actual}`)
+          const info = await this.fileInfo(`${relDir}/${actual}`)
           if (info) files[screen] = info
           break
         }
@@ -341,7 +411,8 @@ export class MediaIndex extends EventEmitter {
       else if (probe && probe.warnings.length > 0) warnings.push(`${screen}: ${probe.warnings[0]}`)
     }
 
-    return { name: dirName, files, complete: missing.length === 0, warnings }
+    const name = path.basename(relDir)
+    return { name, group, ref: group ? `${group}/${name}` : name, files, complete: missing.length === 0, warnings }
   }
 
   // --- Probe-Cache-Persistenz (ffprobe nur einmal pro Datei-Version) ---

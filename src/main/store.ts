@@ -4,6 +4,7 @@ import path from 'node:path'
 import type {
   AppConfig,
   AppState,
+  DisplayInfo,
   IngestJob,
   MediaIndexSnapshot,
   ProjectorStatus,
@@ -12,7 +13,7 @@ import type {
   TemplateInfo,
   WallLayout,
 } from '../shared/types'
-import { SCREEN_NAMES, type ScreenName } from '../shared/screens'
+import { SCREEN_NAMES, type ScreenName, type WindowRole } from '../shared/screens'
 import { saveConfig, configPath } from './config'
 import { ensureCached, clearCacheRegistry } from './cache'
 import { resolveMediaFile } from './media'
@@ -60,7 +61,10 @@ export class Store extends EventEmitter {
   private videoPaused = false
   private videoPausedAtMs: number | null = null
   private jobs: IngestJob[] = []
+  private displays: DisplayInfo[] = []
+  private calibrationFocus: AppState['calibrationFocus'] = null
   private mutationChain: Promise<unknown> = Promise.resolve()
+  private configSaveTimer: NodeJS.Timeout | null = null
 
   constructor(config: AppConfig) {
     super()
@@ -107,7 +111,34 @@ export class Store extends EventEmitter {
       videoPausedAtMs: this.videoPausedAtMs,
       jobs: this.jobs,
       layout: this.config.layout,
+      displays: this.displays,
+      windowSettings: this.config.windows,
+      calibrationFocus: this.calibrationFocus,
     }
+  }
+
+  setDisplays(displays: DisplayInfo[]): void {
+    this.displays = displays
+    this.broadcast()
+  }
+
+  setWindowRotation(role: WindowRole, deg: 0 | 180): void {
+    this.config.windows.rotation[role] = deg
+    saveConfig(this.config)
+    this.broadcast()
+  }
+
+  /** Display-Zuordnung merken — das eigentliche Verschieben macht main/index. */
+  setWindowAssignment(role: WindowRole, displayId: number): void {
+    this.config.windows.assignments[role] = displayId
+    saveConfig(this.config)
+    this.emit('window-assignment', role, displayId)
+    this.broadcast()
+  }
+
+  setCalibrationFocus(focus: AppState['calibrationFocus']): void {
+    this.calibrationFocus = focus
+    this.broadcast()
   }
 
   setJobs(jobs: IngestJob[]): void {
@@ -225,7 +256,7 @@ export class Store extends EventEmitter {
             ? { file: info.file, kind: info.kind, epochMs, version, durationS: info.probe?.durationS }
             : { file: info.file, kind: info.kind, version }
       }
-      this.activeTemplate = template.name
+      this.activeTemplate = template.ref
       // Neuer Inhalt hebt eine globale Video-Pause auf
       this.videoPaused = false
       this.videoPausedAtMs = null
@@ -292,10 +323,28 @@ export class Store extends EventEmitter {
     this.broadcast()
   }
 
+  /**
+   * Kalibrierung setzen. Beim interaktiven Ziehen kommen ~25 Updates/s —
+   * der Broadcast an die Player muss sofort raus (Live-Vorschau), das
+   * Schreiben der Config-Datei wird entprellt.
+   */
   setCalibration(screen: ScreenName, corners: Quad): void {
     this.config.screens[screen] = { ...this.config.screens[screen], corners }
-    saveConfig(this.config)
+    if (this.configSaveTimer) clearTimeout(this.configSaveTimer)
+    this.configSaveTimer = setTimeout(() => {
+      this.configSaveTimer = null
+      saveConfig(this.config)
+    }, 800)
     this.broadcast()
+  }
+
+  /** Ausstehendes Config-Speichern sofort ausführen (beim Beenden). */
+  flushConfig(): void {
+    if (this.configSaveTimer) {
+      clearTimeout(this.configSaveTimer)
+      this.configSaveTimer = null
+      saveConfig(this.config)
+    }
   }
 
   setTransitionMs(ms: number): void {

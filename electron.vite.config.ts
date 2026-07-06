@@ -13,6 +13,7 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/renderer/index.html'),
           control: resolve(__dirname, 'src/renderer/control.html'),
+          admin: resolve(__dirname, 'src/renderer/admin.html'),
         },
       },
     },

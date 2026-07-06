@@ -1,6 +1,6 @@
-import { BrowserWindow, screen } from 'electron'
+import { BrowserWindow, screen, type Display } from 'electron'
 import path from 'node:path'
-import type { AppConfig } from '../shared/types'
+import type { AppConfig, DisplayInfo } from '../shared/types'
 import { WINDOW_ROLES, type WindowRole } from '../shared/screens'
 
 export interface PlayerWindows {
@@ -23,6 +23,64 @@ function loadPlayer(win: BrowserWindow, role: WindowRole): void {
   } else {
     void win.loadFile(path.join(__dirname, '../renderer/index.html'), { query: { role } })
   }
+}
+
+/** Displays für State/Admin-UI aufbereiten. */
+export function listDisplays(): DisplayInfo[] {
+  const primaryId = screen.getPrimaryDisplay().id
+  return screen
+    .getAllDisplays()
+    .slice()
+    .sort((a, b) => a.bounds.x - b.bounds.x)
+    .map((d) => ({
+      id: d.id,
+      label: d.label || `Display ${d.id}`,
+      bounds: { x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height },
+      primary: d.id === primaryId,
+      internal: d.internal ?? false,
+    }))
+}
+
+/**
+ * Display für eine Rolle wählen: gespeicherte Zuordnung, wenn das Display
+ * noch existiert — sonst Fallback auf die Reihenfolge nach x (linkestes
+ * Display = Fenster "links").
+ */
+function displayForRole(config: AppConfig, role: WindowRole): Display | undefined {
+  const displays = screen.getAllDisplays().slice().sort((a, b) => a.bounds.x - b.bounds.x)
+  const assignedId = config.windows.assignments[role]
+  if (assignedId !== undefined) {
+    const assigned = displays.find((d) => d.id === assignedId)
+    if (assigned) return assigned
+  }
+  const index = WINDOW_ROLES.indexOf(role)
+  return displays[Math.min(index, displays.length - 1)]
+}
+
+/** Fenster auf ein Display verschieben und dort in den Vollbildmodus bringen. */
+export function moveToDisplay(win: BrowserWindow, display: Display, simulator: boolean): void {
+  if (simulator) {
+    // Simulator: gerahmtes Fenster nur auf das Display schieben, kein Vollbild
+    const current = win.getBounds()
+    win.setBounds({ ...current, x: display.workArea.x + 40, y: display.workArea.y + 80 })
+    return
+  }
+  if (win.isFullScreen()) win.setFullScreen(false)
+  win.setBounds(display.bounds)
+  win.setFullScreen(true)
+  win.setAlwaysOnTop(true, 'screen-saver')
+}
+
+/** Zuordnung zur Laufzeit ändern (aus der Admin-UI). */
+export function assignWindowToDisplay(
+  win: BrowserWindow,
+  displayId: number,
+  simulator: boolean,
+): { ok: boolean; error?: string } {
+  const display = screen.getAllDisplays().find((d) => d.id === displayId)
+  if (!display) return { ok: false, error: `Display ${displayId} nicht gefunden` }
+  moveToDisplay(win, display, simulator)
+  return { ok: true }
 }
 
 export function createPlayerWindows(config: AppConfig): PlayerWindows {
@@ -51,12 +109,10 @@ export function createPlayerWindows(config: AppConfig): PlayerWindows {
       windows.set(role, win)
     })
   } else {
-    // Echtbetrieb: ein randloses Vollbildfenster pro Display.
-    // M1: einfachste Zuordnung — Displays nach x sortiert, linkestes = "links".
-    // M6 bringt Fingerprint-Matching, Identify-Overlay und Swap.
-    const displays = screen.getAllDisplays().slice().sort((a, b) => a.bounds.x - b.bounds.x)
-    WINDOW_ROLES.forEach((role, i) => {
-      const display = displays[Math.min(i, displays.length - 1)]
+    // Echtbetrieb: ein randloses Vollbildfenster pro Display — gespeicherte
+    // Zuordnung aus der Admin-UI, sonst Displays nach x sortiert
+    WINDOW_ROLES.forEach((role) => {
+      const display = displayForRole(config, role)
       if (!display) return
       const win = new BrowserWindow({
         frame: false,

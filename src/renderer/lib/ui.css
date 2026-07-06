@@ -1,0 +1,252 @@
+/* Gemeinsame Basis für Anwender- und Admin-UI (Buttons, Banner, Karten …) */
+
+body {
+  margin: 0;
+  background: #14161a;
+  color: #e8eaed;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 12px 16px 48px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 12px;
+}
+
+h1 {
+  font-size: 20px;
+  margin: 0;
+}
+
+h2 {
+  font-size: 15px;
+  margin: 22px 0 10px;
+  color: #aab0b8;
+  font-weight: 600;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #d9534f;
+}
+
+.dot.on {
+  background: #4caf50;
+}
+
+.banner {
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.banner.error {
+  background: #5a2320;
+  border: 1px solid #a94442;
+}
+
+.banner.ok {
+  background: #1e4620;
+  border: 1px solid #3c763d;
+}
+
+.muted {
+  color: #777;
+}
+
+button {
+  background: #2a2e35;
+  color: #e8eaed;
+  border: 1px solid #3d434c;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #343a43;
+}
+
+button.primary {
+  background: #2b5ca8;
+  border-color: #3a6fc4;
+}
+
+button.primary:hover {
+  background: #336ac0;
+}
+
+button.danger {
+  background: #a83232;
+  border-color: #c44;
+}
+
+button.big {
+  font-size: 16px;
+  padding: 12px 22px;
+  font-weight: 600;
+}
+
+button.active {
+  background: #2b5ca8;
+}
+
+button.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+button.mini {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+input[type='text'],
+input[type='number'] {
+  padding: 8px 10px;
+  background: #14161a;
+  color: #e8eaed;
+  border: 1px solid #3d434c;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+/* Tabs (Vorlagen-Gruppen, Admin-Bereiche) */
+.tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.tabs button {
+  border-radius: 999px;
+  padding: 6px 16px;
+}
+
+.tabs button.selected {
+  background: #2b5ca8;
+  border-color: #3a6fc4;
+}
+
+/* Vorlagen-/Karten-Raster */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  background: #1c1f24;
+  border: 1px solid #2c313a;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.card.current {
+  border-color: #3a6fc4;
+  box-shadow: 0 0 0 1px #3a6fc4;
+}
+
+.thumbs {
+  display: flex;
+  gap: 4px;
+}
+
+.thumb {
+  flex: 1;
+  aspect-ratio: 9 / 16;
+  background: #000;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+}
+
+.thumb.missing {
+  background: repeating-linear-gradient(45deg, #222, #222 6px, #2a2a2a 6px, #2a2a2a 12px);
+}
+
+.thumb img {
+  height: 100%;
+  object-fit: cover;
+}
+
+.cardfoot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.tname {
+  flex: 1;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warn {
+  color: #f0ad4e;
+  cursor: help;
+}
+
+/* Verarbeitungs-Jobs */
+.jobs {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.job {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  background: #1c1f24;
+  border: 1px solid #2c313a;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.job.error {
+  border-color: #a94442;
+}
+
+.job.done {
+  opacity: 0.65;
+}
+
+.joblabel {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jobstatus {
+  color: #aab0b8;
+}
+
+.job progress {
+  width: 140px;
+  accent-color: #3a6fc4;
+}

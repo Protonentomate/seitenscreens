@@ -1,6 +1,6 @@
 # System: Anforderungen, Architektur & Entscheidungen
 
-Stand: Juli 2026. Dieses Dokument hält fest, **was** das System können muss,
+Stand: 2026-07-05. Dieses Dokument hält fest, **was** das System können muss,
 **wie** es gebaut ist und **warum** — damit spätere Arbeiten (neue Features,
 anderer Entwickler, KI-Assistent) ohne Archäologie weitermachen können.
 
@@ -101,15 +101,30 @@ reicht NICHT).
 
 ```
 _Vorlagen/
-├── Scene 1/                  ← Unterordner = Vorlage
-│   ├── LinksLinks.jpg        ← eine Datei pro Leinwand
-│   ├── LinksRechts.mp4       ← Video schlägt Bild (mp4 > webm > png > jpg > webp)
-│   ├── RechtsLinks.jpg
-│   └── RechtsRechts.jpg
-├── Worship.jpg               ← lose Datei = Einzelbild (auf beliebige Leinwand legbar)
+├── Pimi/                     ← Ordner ohne Leinwand-Dateien = Gruppe
+│   ├── Scene 1/              ← Unterordner der Gruppe = Vorlage
+│   │   ├── LinksLinks.jpg    ← eine Datei pro Leinwand
+│   │   ├── LinksRechts.mp4   ← Video schlägt Bild (mp4 > webm > png > jpg > webp)
+│   │   ├── RechtsLinks.jpg
+│   │   └── RechtsRechts.jpg
+│   ├── Scene 2/
+│   └── Worship.jpg           ← lose Datei in einer Gruppe = Einzelbild dieser Gruppe
+├── Scene 9/                  ← Wurzel-Ordner MIT Leinwand-Dateien = Vorlage ohne Gruppe
+├── Anzeige.jpg               ← lose Datei in der Wurzel = Einzelbild (Gruppe „Allgemein")
+├── _Papierkorb/              ← Ablage des Papierkorbs (Admin-Tab „Inhalte"), ignoriert
 └── _irgendwas/, Archiv/, Serie*/ ← ignoriert (auch ._*, *.part, *.tmp)
 ```
 
+- **Gruppen**: Ein Wurzel-Ordner, der direkt Leinwand-Dateien (`LinksLinks.*`
+  usw.) enthält, ist eine Vorlage **ohne** Gruppe — die bisherige flache
+  Struktur bleibt kompatibel und erscheint im Tab „Allgemein". Ein
+  Wurzel-Ordner ohne Leinwand-Dateien gilt als **Gruppe**, seine Unterordner
+  als Vorlagen (z.B. `Pimi/`, `Upgrade/`, `NTL/`). Lose Mediendateien direkt
+  in einem Gruppen-Ordner sind **Einzelbilder dieser Gruppe**; lose Dateien
+  in der Wurzel gehören zur Gruppe „Allgemein". Beide Web-Seiten zeigen
+  Gruppen-Tabs und filtern auch die Einzelbilder nach dem gewählten Tab;
+  „Pimi" ist als Standard-Tab vorgewählt (sonst die alphabetisch erste
+  Gruppe).
 - Vorlagen dürfen unvollständig sein (Anwenden verlangt dann Bestätigung/`force=1`)
 - Gross-/Kleinschreibung der Dateinamen ist egal, Umlaute funktionieren (NFC-Normalisierung)
 
@@ -120,6 +135,49 @@ Referenz-ffmpeg-Flags: `-c:v libx264 -preset veryfast -crf 18 -profile:v high
 -level 4.0 -vf fps=30,scale=…,format=yuv420p -g 60 -keyint_min 60
 -sc_threshold 0 -bf 2 -movflags +faststart -an`
 
+### Upload/Ingest (Admin-Seite `/admin`, Tab „Hochladen")
+
+- **Modi**: `single` (eine Leinwand), `clone` (alle gleich), `span` (ein Motiv
+  über alle 4 Leinwände gespannt, mit Leinwand-Abständen), **`span2`**
+  („Je über 2 spannen"): Motiv über die beiden linken Leinwände gespannt
+  (inkl. deren Lücke, `gapsMm[0]`) und identisch über die beiden rechten
+  (`gapsMm[2]`) — passt für normale Querformat-Motive deutlich besser als
+  span über alle 4.
+- **Einpassen**: `contain` (Einpassen), `cover` (Füllen), **`stretch`**
+  (Strecken — verzerrt auf die volle Fläche).
+- **Übergang zwischen den Leinwänden** (nur `span`/`span2`, Feld `gaps`, in
+  der Admin-UI als Radio „Übergang zwischen den Leinwänden"): `exact`
+  (Standard) rechnet geometrisch korrekt — Lücken zwischen den Leinwänden
+  und Höhenversatz maskieren Bildteile, durchlaufende Motive fluchten
+  physisch. `none` schneidet nichts ab — die Leinwände teilen das Motiv
+  nahtlos, Lücken und Versatz werden ignoriert.
+- **Namensregeln**: Vorlagen-/Gruppen-Namen, die mit „serie", „archiv", `_`
+  oder `.` beginnen, lehnt der Upload ab (der Index würde sie ignorieren).
+- **Sofort-Verarbeitung**: Jobs laufen sofort, auch wenn ein Video live läuft.
+  ffmpeg bekommt dann niedrigste OS-Priorität und gedrosselte Encoder-Threads —
+  die Wiedergabe behält Vorrang, das Encoding dauert einfach länger.
+- **Überschreiben**: Upload mit gleichem Gruppen-/Vorlagen-Namen ersetzt die
+  Vorlage (die UI warnt vorher). Der Namensabgleich ist case- und
+  Unicode-insensitiv (Windows/NTFS-Semantik); die Schreibweise der
+  bestehenden Vorlage wird übernommen. Ist die Vorlage gerade live
+  geschaltet, wird sie nach der Verarbeitung automatisch neu angewendet —
+  so lassen sich Inhalte während eines Anlasses schnell korrigieren.
+- **Vorschau**: Die Admin-Seite zeigt vor dem Hochladen client-seitig, wie das
+  Motiv auf allen 4 Leinwänden aussehen wird (auch für Videos) — mit exakt
+  derselben Zuschnitt-Geometrie wie der Server (geteiltes Modul
+  `src/shared/span.ts`). Dazu ein Format-Hinweis, welches Seitenverhältnis
+  für den gewählten Modus ideal ist (aus dem Wand-Layout gerechnet).
+
+### Papierkorb (Admin-Tab „Inhalte")
+
+Der Tab „Inhalte" listet alle Vorlagen und Einzelbilder pro Gruppe mit einem
+„🗑 Papierkorb"-Knopf. Gelöscht wird nichts: Die Dateien wandern nach
+`_Papierkorb/` im Medienordner (mit Zeitstempel-Präfix, z.B.
+`2026-07-05 19.53 test222`); Wiederherstellen = in Nextcloud zurückschieben.
+Die gerade live geschaltete Vorlage — oder eine, deren Dateien auf einer
+Leinwand liegen — wird verweigert. Endpunkt: `POST /api/trash`, Body
+`{type:'template', ref}` oder `{type:'single', file}`.
+
 ## 4. Konfiguration
 
 `config.json` (Pfad: `%APPDATA%/seitenscreens/` bzw. via Env
@@ -127,6 +185,13 @@ Referenz-ffmpeg-Flags: `-c:v libx264 -preset veryfast -crf 18 -profile:v high
 
 - `mediaRoot` — Pfad zum Nextcloud-`_Vorlagen`-Ordner (per Web-UI änderbar)
 - `screens` — Kalibrierung: 4 Eckpunkte pro Leinwand in Fenster-Pixeln (1920×1080)
+- Wand-Layout (fürs Spannen, einstellbar unter `/admin` → Einstellungen →
+  „Wand-Layout"): Leinwand-Abstände `gapsMm` und Höhenversatz je Leinwand
+  `yOffsetsMm` `[LL, LR, RL, RR]` in mm (positiv = Leinwand hängt tiefer;
+  in der Kirche hängen die äusseren tiefer als die inneren). Wirkt beim
+  geometrisch korrekten Spannen (`gaps: exact`): tiefere Leinwände zeigen
+  den entsprechend versetzten Bildausschnitt. Muss wie die Abstände in der
+  Kirche ausgemessen werden (aktuell Platzhalter 0).
 - `transitionMs`, `server.port`, `simulator`, `projectors` (IPs + Treiber)
 
 **StreamFX-Import**: `npm run import-streamfx` konvertiert die Corner-Pin-Werte
@@ -144,8 +209,28 @@ Env-Overrides: `SEITENSCREENS_CONFIG`, `SEITENSCREENS_FFMPEG`, `SEITENSCREENS_FF
 | M2 | Video-Engine: Wanduhr-Sync, Loop, Drift-Regler (< 10 ms gemessen) | ✅ |
 | M3 | Medien-Index, Schattencache, REST/WS-API, Control-UI, Beamer ein/aus, Video-Pause/Seek | ✅ |
 | M4 | Admin-Upload: Normalisieren, single/clone/**span mit Leinwand-Abständen**, Job-Queue | 🔨 |
-| M5 | Kalibrier-UI: Ecken ziehen am Live-Output, Layout-Editor, Re-Render | ⬜ |
-| M6 | Windows-Kiosk: Display-Mapping, Autostart, Preflight-Ampel, NSIS-Installer, ffmpeg-Vendoring | ⬜ |
+| M5 | Kalibrier-UI: Ecken ziehen am Live-Output (Admin-Tab „Kalibrierung") | ✅ (Re-Render-Knopf & Kalibrier-Export → M6) |
+| M6 | Windows-Kiosk: Autostart, Preflight-Ampel, NSIS-Installer, ffmpeg-Vendoring (Display-Mapping bereits vorgezogen, s.u.) | ⬜ |
+
+**Kalibrier-UI (M5)**: pro Beamer-Fenster eine SVG-Ansicht (1920×1080) mit
+ziehbaren Ecken; Änderungen streamen live auf die Leinwände (gedrosselt
+~20/s, Config-Speichern entprellt 800 ms). Pfeiltasten = 1 px, Shift = 10 px,
+Alt = 0,1 px. Die gewählte Ecke wird auf der echten Leinwand magenta markiert
+(Testbild einschalten hilft).
+
+**Vorgezogen aus M6 — Display-Zuordnung** (Admin-Tab „Anzeige"): pro
+Beamer-Fenster das physische Display (HDMI/DisplayPort-Ausgang) wählen
+(persistiert, beim Start berücksichtigt; ohne Zuordnung gilt: linkestes
+Display = Fenster „links"), Ausgabe um 180° drehen (kopfüber montierter
+Beamer), „Fenster identifizieren" (blendet 4 s gross links/rechts ein),
+„Vollbild erzwingen". Im Simulator-Modus (Mac) ohne echte Wirkung.
+
+Neue Endpunkte dazu: `POST /api/calibration/{Screen}`,
+`POST /api/calibration/focus`, `POST /api/display/assign`,
+`POST /api/display/rotation`, `GET|POST /api/display/identify`,
+`POST /api/display/refullscreen`; für Vorlagen in Gruppen
+`GET /api/template/{Gruppe}/{Name}/apply` (ohne Gruppe nur bei eindeutigem
+Namen, sonst 409 mit Kandidatenliste). Übersicht in der README.
 
 Auf echte Hardware verschoben (M6): Degradations-Fallback bei Frame-Drops
 während Überblendungen, Verifikation Hardware-Decode (D3D11), Worst-Case-Test

@@ -15,8 +15,14 @@ import type { MediaIndex } from './mediaIndex'
 import type { ProjectorManager } from './projectors'
 import type { IngestQueue } from './ingest'
 import { resolveMediaFile, openFileStream, isServableMedia } from './media'
-import { isScreenName, SCREEN_NAMES, type ScreenName } from '../shared/screens'
-import type { MediaFileInfo, IngestFit, IngestMode } from '../shared/types'
+import { isScreenName, SCREEN_NAMES, WINDOW_ROLES, type ScreenName, type WindowRole } from '../shared/screens'
+import type { MediaFileInfo, IngestFit, IngestMode, Quad, SpanGaps } from '../shared/types'
+
+/** Fenster-Aktionen, die main/index bereitstellt (Identify, Vollbild erzwingen). */
+export interface WindowControl {
+  identify(): void
+  refullscreen(): void
+}
 
 function ffmpegBinary(): string {
   return process.env.SEITENSCREENS_FFMPEG || 'ffmpeg'
@@ -38,6 +44,7 @@ export async function startApi(
   index: MediaIndex,
   projectors: ProjectorManager,
   ingest: IngestQueue,
+  windowControl: WindowControl,
 ): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
   // Im Dev-Modus läuft die UI auf dem Vite-Port (5173), die API auf 8080 —
@@ -97,27 +104,60 @@ export async function startApi(
     return { ok: true, templates: snap.templates, singles: snap.singles, updatedAt: snap.updatedAt }
   })
 
+  /**
+   * Vorlage anwenden — per "Name" (eindeutig über alle Gruppen, für kurze
+   * Stream-Deck-URLs) oder "Gruppe/Name".
+   */
+  const applyTemplateRef = async (
+    ref: string,
+    force: boolean,
+  ): Promise<{ status: number; body: Record<string, unknown> }> => {
+    const resolved = index.resolveTemplate(ref)
+    if (resolved.ambiguous) {
+      return {
+        status: 409,
+        body: { ok: false, error: `Mehrdeutig — Gruppe angeben: ${resolved.ambiguous.join(', ')}` },
+      }
+    }
+    const template = resolved.template
+    if (!template) {
+      return { status: 404, body: { ok: false, error: `Vorlage nicht gefunden: ${ref}` } }
+    }
+    if (!template.complete && !force) {
+      return {
+        status: 409,
+        body: {
+          ok: false,
+          error: `Vorlage unvollständig (${template.warnings[0] ?? ''}) — mit ?force=1 werden nur die vorhandenen Leinwände gewechselt`,
+        },
+      }
+    }
+    const result = await store.applyTemplate(template)
+    if (!result.ok) {
+      return { status: 409, body: { ok: false, error: result.error } }
+    }
+    return { status: 200, body: ok({ applied: template.ref }) }
+  }
+
   app.route({
     method: ['GET', 'POST'],
     url: '/api/template/:name/apply',
     handler: async (req, reply) => {
       const { name } = req.params as { name: string }
       const force = (req.query as Record<string, string>).force === '1'
-      const template = index.getTemplate(name)
-      if (!template) {
-        return reply.status(404).send({ ok: false, error: `Vorlage nicht gefunden: ${name}` })
-      }
-      if (!template.complete && !force) {
-        return reply.status(409).send({
-          ok: false,
-          error: `Vorlage unvollständig (${template.warnings[0] ?? ''}) — mit ?force=1 werden nur die vorhandenen Leinwände gewechselt`,
-        })
-      }
-      const result = await store.applyTemplate(template)
-      if (!result.ok) {
-        return reply.status(409).send({ ok: false, error: result.error })
-      }
-      return ok({ applied: template.name })
+      const result = await applyTemplateRef(name, force)
+      return reply.status(result.status).send(result.body)
+    },
+  })
+
+  app.route({
+    method: ['GET', 'POST'],
+    url: '/api/template/:group/:name/apply',
+    handler: async (req, reply) => {
+      const { group, name } = req.params as { group: string; name: string }
+      const force = (req.query as Record<string, string>).force === '1'
+      const result = await applyTemplateRef(`${group}/${name}`, force)
+      return reply.status(result.status).send(result.body)
     },
   })
 
@@ -290,6 +330,168 @@ export async function startApi(
     },
   })
 
+  // --- Kalibrierung (Admin: Ecken ziehen mit Live-Vorschau) ---
+
+  const parseQuad = (raw: unknown): Quad | null => {
+    const q = raw as Record<string, { x?: unknown; y?: unknown }> | null
+    if (!q || typeof q !== 'object') return null
+    const corners = {} as Record<'tl' | 'tr' | 'br' | 'bl', { x: number; y: number }>
+    for (const key of ['tl', 'tr', 'br', 'bl'] as const) {
+      const x = Number(q[key]?.x)
+      const y = Number(q[key]?.y)
+      // Grosszügige Grenzen: Ecken dürfen auch etwas ausserhalb der Bühne liegen
+      if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > 8000 || Math.abs(y) > 8000) return null
+      corners[key] = { x, y }
+    }
+    return corners
+  }
+
+  app.post('/api/calibration/:screen', async (req, reply) => {
+    const { screen } = req.params as { screen: string }
+    if (!isScreenName(screen)) {
+      return reply.status(404).send({ ok: false, error: `Unbekannte Leinwand: ${screen}` })
+    }
+    const body = req.body as { corners?: unknown } | null
+    const corners = parseQuad(body?.corners)
+    if (!corners) {
+      return reply.status(400).send({ ok: false, error: 'corners mit tl/tr/br/bl {x,y} erwartet' })
+    }
+    store.setCalibration(screen, corners)
+    return ok()
+  })
+
+  /** Gerade bearbeitete Ecke — der Player markiert sie auf der Leinwand. */
+  app.post('/api/calibration/focus', async (req, reply) => {
+    const body = req.body as { screen?: string; corner?: string } | null
+    if (!body?.screen) {
+      store.setCalibrationFocus(null)
+      return ok()
+    }
+    if (!isScreenName(body.screen) || !['tl', 'tr', 'br', 'bl'].includes(body.corner ?? '')) {
+      return reply.status(400).send({ ok: false, error: 'screen + corner (tl|tr|br|bl) erwartet' })
+    }
+    store.setCalibrationFocus({ screen: body.screen, corner: body.corner as 'tl' | 'tr' | 'br' | 'bl' })
+    return ok()
+  })
+
+  // --- Displays & Fenster (Admin: welcher Ausgang ist welcher Beamer) ---
+
+  const isWindowRole = (v: string): v is WindowRole => (WINDOW_ROLES as readonly string[]).includes(v)
+
+  app.post('/api/display/assign', async (req, reply) => {
+    const body = req.body as { window?: string; displayId?: unknown } | null
+    const displayId = Number(body?.displayId)
+    if (!body?.window || !isWindowRole(body.window) || !Number.isFinite(displayId)) {
+      return reply.status(400).send({ ok: false, error: 'window (links|rechts) + displayId erwartet' })
+    }
+    const exists = store.snapshot().displays.some((d) => d.id === displayId)
+    if (!exists) {
+      return reply.status(404).send({ ok: false, error: `Display ${displayId} nicht gefunden` })
+    }
+    store.setWindowAssignment(body.window, displayId)
+    return ok()
+  })
+
+  app.post('/api/display/rotation', async (req, reply) => {
+    const body = req.body as { window?: string; deg?: unknown } | null
+    const deg = Number(body?.deg)
+    if (!body?.window || !isWindowRole(body.window) || (deg !== 0 && deg !== 180)) {
+      return reply.status(400).send({ ok: false, error: 'window (links|rechts) + deg (0|180) erwartet' })
+    }
+    store.setWindowRotation(body.window, deg as 0 | 180)
+    return ok()
+  })
+
+  app.route({
+    method: ['GET', 'POST'],
+    url: '/api/display/identify',
+    handler: async () => {
+      windowControl.identify()
+      return ok()
+    },
+  })
+
+  app.post('/api/display/refullscreen', async () => {
+    windowControl.refullscreen()
+    return ok()
+  })
+
+  // --- Papierkorb (Admin): nichts wird gelöscht, nur verschoben ---
+
+  /** Eindeutigen Zielpfad im Papierkorb finden (Zeitstempel + Zähler). */
+  const trashDestination = (mediaRoot: string, name: string): string => {
+    const trashDir = path.join(mediaRoot, '_Papierkorb')
+    fs.mkdirSync(trashDir, { recursive: true })
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ').replace(':', '.')
+    let dest = path.join(trashDir, `${stamp} ${name}`)
+    let counter = 2
+    while (fs.existsSync(dest)) {
+      dest = path.join(trashDir, `${stamp} ${name} (${counter})`)
+      counter++
+    }
+    return dest
+  }
+
+  app.post('/api/trash', async (req, reply) => {
+    const body = req.body as { type?: string; ref?: string; file?: string } | null
+    const mediaRoot = store.getConfig().mediaRoot
+    if (!mediaRoot || !fs.existsSync(mediaRoot)) {
+      return reply.status(409).send({ ok: false, error: 'Medienordner nicht konfiguriert' })
+    }
+
+    if (body?.type === 'template' && body.ref) {
+      const resolved = index.resolveTemplate(body.ref)
+      if (resolved.ambiguous) {
+        return reply.status(409).send({ ok: false, error: `Mehrdeutig: ${resolved.ambiguous.join(', ')}` })
+      }
+      const template = resolved.template
+      if (!template) return reply.status(404).send({ ok: false, error: `Vorlage nicht gefunden: ${body.ref}` })
+      // Live-Schutz: aktive Vorlage ODER einzelne Dateien daraus auf Leinwänden
+      const snapshot = store.snapshot()
+      const filePrefix = `${template.ref}/`
+      const inUse =
+        snapshot.activeTemplate === template.ref ||
+        Object.values(snapshot.screens).some((c) => c?.file.startsWith(filePrefix))
+      if (inUse) {
+        return reply.status(409).send({ ok: false, error: 'Vorlage ist gerade live — zuerst etwas anderes anwenden' })
+      }
+      const srcDir = template.group
+        ? path.join(mediaRoot, template.group, template.name)
+        : path.join(mediaRoot, template.name)
+      const dest = trashDestination(mediaRoot, template.group ? `${template.group}__${template.name}` : template.name)
+      try {
+        await fs.promises.rename(srcDir, dest)
+      } catch (err) {
+        return reply.status(500).send({ ok: false, error: `Verschieben fehlgeschlagen: ${String(err)}` })
+      }
+      await index.rescanNow()
+      return ok({ trashed: template.ref })
+    }
+
+    if (body?.type === 'single' && body.file) {
+      const rel = body.file
+      const isSingle = index.getSnapshot().singles.some((s) => s.file === rel)
+      const abs = resolveMediaFile(mediaRoot, rel)
+      if (!isSingle || !abs) {
+        return reply.status(404).send({ ok: false, error: `Einzelbild nicht gefunden: ${rel}` })
+      }
+      const inUse = Object.values(store.snapshot().screens).some((c) => c?.file === rel)
+      if (inUse) {
+        return reply.status(409).send({ ok: false, error: 'Datei liegt gerade auf einer Leinwand — zuerst wechseln' })
+      }
+      const dest = trashDestination(mediaRoot, path.basename(rel))
+      try {
+        await fs.promises.rename(abs, dest)
+      } catch (err) {
+        return reply.status(500).send({ ok: false, error: `Verschieben fehlgeschlagen: ${String(err)}` })
+      }
+      await index.rescanNow()
+      return ok({ trashed: rel })
+    }
+
+    return reply.status(400).send({ ok: false, error: 'type template+ref oder single+file erwartet' })
+  })
+
   // --- Upload & Verarbeitung (Admin) ---
 
   app.post('/api/upload', async (req, reply) => {
@@ -301,15 +503,20 @@ export async function startApi(
     const fieldValue = (name: string): string => String(fields[name]?.value ?? '').trim()
 
     const templateName = fieldValue('templateName')
+    const group = fieldValue('group')
     const mode = fieldValue('mode') as IngestMode
     const fit = (fieldValue('fit') || 'contain') as IngestFit
+    const gaps = (fieldValue('gaps') || 'exact') as SpanGaps
     const target = fieldValue('target')
 
-    if (!['single', 'clone', 'span'].includes(mode)) {
-      return reply.status(400).send({ ok: false, error: 'mode muss single|clone|span sein' })
+    if (!['single', 'clone', 'span', 'span2'].includes(mode)) {
+      return reply.status(400).send({ ok: false, error: 'mode muss single|clone|span|span2 sein' })
     }
-    if (!['contain', 'cover'].includes(fit)) {
-      return reply.status(400).send({ ok: false, error: 'fit muss contain|cover sein' })
+    if (!['contain', 'cover', 'stretch'].includes(fit)) {
+      return reply.status(400).send({ ok: false, error: 'fit muss contain|cover|stretch sein' })
+    }
+    if (!['exact', 'none'].includes(gaps)) {
+      return reply.status(400).send({ ok: false, error: 'gaps muss exact|none sein' })
     }
     if (mode === 'single' && !isScreenName(target)) {
       return reply.status(400).send({ ok: false, error: 'target muss eine Leinwand sein' })
@@ -327,10 +534,12 @@ export async function startApi(
     const result = ingest.enqueue({
       uploadPath,
       originalName: safeName,
+      group,
       templateName,
       mode,
       target: mode === 'single' ? (target as ScreenName) : undefined,
       fit,
+      gaps,
     })
     if (!result.ok) {
       fs.rmSync(uploadPath, { force: true })
@@ -397,16 +606,34 @@ export async function startApi(
         newProjectors.push({ id: p.id, host: p.host.trim() })
       }
     }
-    let newLayout: { canvasWmm: number; canvasHmm: number; gapsMm: [number, number, number] } | undefined
-    const bodyLayout = (body as { layout?: { canvasWmm?: unknown; canvasHmm?: unknown; gapsMm?: unknown[] } }).layout
+    let newLayout:
+      | {
+          canvasWmm: number
+          canvasHmm: number
+          gapsMm: [number, number, number]
+          yOffsetsMm: [number, number, number, number]
+        }
+      | undefined
+    const bodyLayout = (
+      body as { layout?: { canvasWmm?: unknown; canvasHmm?: unknown; gapsMm?: unknown[]; yOffsetsMm?: unknown[] } }
+    ).layout
     if (bodyLayout) {
       const w = Number(bodyLayout.canvasWmm)
       const h = Number(bodyLayout.canvasHmm)
       const gaps = Array.isArray(bodyLayout.gapsMm) ? bodyLayout.gapsMm.map(Number) : []
+      const yOffs = Array.isArray(bodyLayout.yOffsetsMm) ? bodyLayout.yOffsetsMm.map(Number) : [0, 0, 0, 0]
       if (!(w > 100 && h > 100) || gaps.length !== 3 || gaps.some((g) => !Number.isFinite(g) || g < 0)) {
         return reply.status(400).send({ ok: false, error: 'Layout: Masse in mm (Breite/Höhe > 100, 3 Abstände ≥ 0)' })
       }
-      newLayout = { canvasWmm: w, canvasHmm: h, gapsMm: [gaps[0]!, gaps[1]!, gaps[2]!] }
+      if (yOffs.length !== 4 || yOffs.some((o) => !Number.isFinite(o) || Math.abs(o) > 2000)) {
+        return reply.status(400).send({ ok: false, error: 'Layout: 4 Höhenversätze in mm (±2000) erwartet' })
+      }
+      newLayout = {
+        canvasWmm: w,
+        canvasHmm: h,
+        gapsMm: [gaps[0]!, gaps[1]!, gaps[2]!],
+        yOffsetsMm: [yOffs[0]!, yOffs[1]!, yOffs[2]!, yOffs[3]!],
+      }
     }
 
     // Phase 2: anwenden
@@ -513,12 +740,14 @@ export async function startApi(
   if (devUrl) {
     // Entwicklung: Vite-Dev-Server rendert die UI (nur auf dieser Maschine erreichbar)
     app.get('/', async (_req, reply) => reply.redirect(`${devUrl}/control.html`))
+    app.get('/admin', async (_req, reply) => reply.redirect(`${devUrl}/admin.html`))
   } else {
     await app.register(fastifyStatic, {
       root: path.join(__dirname, '../renderer'),
       prefix: '/ui/',
     })
     app.get('/', async (_req, reply) => reply.redirect('/ui/control.html'))
+    app.get('/admin', async (_req, reply) => reply.redirect('/ui/admin.html'))
   }
 
   app.addHook('onSend', async (req, reply) => {

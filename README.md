@@ -28,8 +28,20 @@ npm run import-streamfx -- \
 SEITENSCREENS_CONFIG=./dev/config.json npm run dev
 ```
 
-Steuerung: **http://localhost:8080** — Vorlagen anwenden, Blackout, Testbild,
-Video-Pause/-Slider, Beamer ein/aus, Einstellungen (u.a. Medienordner-Pfad).
+Steuerung über zwei getrennte Seiten:
+
+- **Anwender-Seite** `http://localhost:8080/` — Vorlagen anwenden (mit
+  Gruppen-Tabs), Blackout, Testbild, Beamer ein/aus, Video-Pause/-Slider,
+  Einzelbilder. Mehr sieht der Sonntags-Bediener nicht.
+- **Admin-Seite** `http://localhost:8080/admin` (Link „Verwaltung →" oben
+  rechts) — Tabs **Hochladen**, **Inhalte**, **Kalibrierung**, **Anzeige**,
+  **Einstellungen** (u.a. Medienordner-Pfad). Bewusst getrennt, ohne Auth
+  (Kirchen-LAN).
+
+Vorlagen und Einzelbilder liegen im `_Vorlagen`-Ordner, optional gruppiert in
+Unterordnern (z.B. `Pimi/Scene 1/…`, `Pimi/Worship.jpg`) — beide Seiten
+zeigen dafür Gruppen-Tabs. Details zur Ordner-Konvention:
+[docs/SYSTEM.md](docs/SYSTEM.md), Abschnitt 3.
 
 ```bash
 npm test           # Unit-Tests (Homographie, StreamFX-Import)
@@ -50,12 +62,14 @@ npm run build      # Produktions-Build nach out/
 
 ## HTTP-API (Stream Deck & Skripte)
 
-Alle Endpunkte funktionieren als einfache GETs (fürs Stream-Deck-Plugin
+Die Bedien-Endpunkte funktionieren als einfache GETs (fürs Stream-Deck-Plugin
 „API Request", `com.github.mjbnz.sd-api-request`) und liefern JSON `{ok, state}`.
+Die POST-Endpunkte am Tabellenende sind primär für die Admin-UI gedacht.
 
 | Endpunkt | Wirkung |
 |---|---|
-| `GET /api/template/{Name}/apply` | Vorlage anwenden (`?force=1` bei unvollständigen) |
+| `GET /api/template/{Name}/apply` | Vorlage anwenden (`?force=1` bei unvollständigen); Name case-insensitiv, muss über alle Gruppen eindeutig sein, sonst 409 mit Kandidatenliste |
+| `GET /api/template/{Gruppe}/{Name}/apply` | Vorlage einer bestimmten Gruppe anwenden |
 | `GET /api/screen/{Screen}/set?file={rel}` | Einzelne Leinwand setzen |
 | `GET /api/screens/set?file={rel}&screens=all` | Alle Leinwände, synchroner Videostart |
 | `GET /api/screen/{Screen}/clear` | Leinwand leeren |
@@ -65,5 +79,13 @@ Alle Endpunkte funktionieren als einfache GETs (fürs Stream-Deck-Plugin
 | `GET /api/testpattern/on\|off` | Testbild für Kalibrier-Kontrolle |
 | `GET /api/projector/on\|off` | Beide Beamer schalten (`/api/projector/{links\|rechts}/on\|off` einzeln) |
 | `GET /api/state`, `/api/health`, `/api/templates` | Zustand, Diagnose, Medienliste |
+| `POST /api/upload` | Multipart-Upload: `mode` = `single`\|`clone`\|`span`\|`span2`, `fit` = `contain`\|`cover`\|`stretch`, `gaps` = `exact`\|`none` (Übergang beim Spannen), `group` = Gruppen-Ordner (optional) |
+| `POST /api/trash` | In den Papierkorb (`_Papierkorb/` im Medienordner) verschieben, Body `{type:'template', ref}` oder `{type:'single', file}` |
+| `POST /api/calibration/{Screen}` | Leinwand-Ecken setzen, Body `{corners:{tl:{x,y},tr,br,bl}}` |
+| `POST /api/calibration/focus` | Ecke auf der Leinwand magenta markieren, Body `{screen,corner}` (`{}` löscht die Markierung) |
+| `POST /api/display/assign` | Beamer-Fenster einem Display zuordnen, Body `{window:'links'\|'rechts', displayId}` |
+| `POST /api/display/rotation` | Ausgabe um 180° drehen, Body `{window, deg:0\|180}` |
+| `GET\|POST /api/display/identify` | Fenster-Kennung 4 s gross einblenden (links/rechts) |
+| `POST /api/display/refullscreen` | Vollbild auf den Beamer-Fenstern erzwingen |
 
 Live-Updates für UIs: WebSocket `ws://…:8080/ws` (komplette Zustands-Schnappschüsse).

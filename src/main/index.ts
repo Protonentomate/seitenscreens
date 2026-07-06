@@ -1,12 +1,13 @@
-import { app, ipcMain, powerSaveBlocker, type WebContents } from 'electron'
+import { app, ipcMain, powerSaveBlocker, screen, type WebContents } from 'electron'
 import { loadConfig } from './config'
 import { Store } from './store'
 import { registerMediaSchemePrivileges, registerMediaProtocol } from './media'
-import { createPlayerWindows } from './windows'
-import { startApi } from './api'
+import { createPlayerWindows, listDisplays, assignWindowToDisplay } from './windows'
+import { startApi, type WindowControl } from './api'
 import { MediaIndex } from './mediaIndex'
 import { ProjectorManager } from './projectors'
 import { IngestQueue } from './ingest'
+import type { WindowRole } from '../shared/screens'
 
 // Muss vor app.whenReady() passieren
 registerMediaSchemePrivileges()
@@ -89,6 +90,36 @@ async function main(): Promise<void> {
 
   powerSaveBlocker.start('prevent-display-sleep')
 
+  // Displays für die Admin-UI (Zuordnung Fenster ↔ physischer Ausgang)
+  store.setDisplays(listDisplays())
+  for (const event of ['display-added', 'display-removed', 'display-metrics-changed'] as const) {
+    screen.on(event as 'display-added', () => store.setDisplays(listDisplays()))
+  }
+  store.on('window-assignment', (role: WindowRole, displayId: number) => {
+    const win = windows.get(role)
+    if (win && !win.isDestroyed()) {
+      const result = assignWindowToDisplay(win, displayId, simulator)
+      if (!result.ok) console.warn('[windows]', result.error)
+    }
+  })
+
+  const windowControl: WindowControl = {
+    identify() {
+      for (const [role, win] of windows) {
+        if (!win.isDestroyed()) win.webContents.send('identify', { role })
+      }
+    },
+    refullscreen() {
+      // Vollbild erneut erzwingen (falls z.B. Windows das Fenster verschoben hat)
+      for (const [role] of windows) {
+        const win = windows.get(role)
+        if (!win || win.isDestroyed() || simulator) continue
+        win.setFullScreen(true)
+        win.setAlwaysOnTop(true, 'screen-saver')
+      }
+    },
+  }
+
   // Medien-Index: beobachtet den Nextcloud-Ordner, prüft Videos per ffprobe
   const index = new MediaIndex()
   index.on('index', (snapshot) => store.setMediaIndex(snapshot))
@@ -103,19 +134,20 @@ async function main(): Promise<void> {
     store.setProjectors(projectors.list())
   })
 
-  // Upload-Verarbeitung (pausiert automatisch, solange Videos live laufen)
-  const ingest = new IngestQueue(store)
+  // Upload-Verarbeitung (läuft sofort, gedrosselt solange Videos live sind)
+  const ingest = new IngestQueue(store, index)
 
   store.restoreLastState()
 
   try {
-    await startApi(store, index, projectors, ingest)
+    await startApi(store, index, projectors, ingest, windowControl)
   } catch (err) {
     console.error('[api] Start fehlgeschlagen:', err)
   }
 
   app.on('before-quit', () => {
     store.flushLastState()
+    store.flushConfig()
   })
 
   app.on('window-all-closed', () => {

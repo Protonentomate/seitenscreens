@@ -96,3 +96,43 @@ body.no-cursor {
 #window-label.active {
   display: flex;
 }
+
+/* "Identifizieren" aus der Admin-UI: Fenster-Rolle gross einblenden */
+#identify {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 120;
+  color: #4caf50;
+  background: rgba(0, 0, 0, 0.55);
+  font-family: system-ui, sans-serif;
+  font-size: 14vw;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
+
+#identify.active {
+  display: flex;
+}
+
+/* Markierung der gerade bearbeiteten Ecke (Kalibrier-UI) */
+.corner-marker {
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  border: 14px solid #f0f;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  display: none;
+  pointer-events: none;
+  z-index: 5;
+  box-shadow: 0 0 40px 6px rgba(255, 0, 255, 0.7), inset 0 0 24px rgba(255, 0, 255, 0.7);
+}
+
+.quad .corner-marker.active {
+  display: block;
+}

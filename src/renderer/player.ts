@@ -25,17 +25,33 @@ document.title = `Beamer ${role}`
 const stage = document.getElementById('stage') as HTMLDivElement
 const blackoutEl = document.getElementById('blackout') as HTMLDivElement
 const windowLabel = document.getElementById('window-label') as HTMLDivElement
+const identifyEl = document.getElementById('identify') as HTMLDivElement
 windowLabel.textContent = `BEAMER ${role.toUpperCase()}`
+identifyEl.textContent = role
+
+/** 180° für kopfüber montierte Beamer (aus den Fenster-Einstellungen). */
+let rotate180 = false
 
 /** Bühne (logisch 1920×1080) auf die tatsächliche Fenstergrösse skalieren. */
 function fitStage(): void {
   const scale = Math.min(window.innerWidth / OUTPUT_WIDTH, window.innerHeight / OUTPUT_HEIGHT)
   const offsetX = (window.innerWidth - OUTPUT_WIDTH * scale) / 2
   const offsetY = (window.innerHeight - OUTPUT_HEIGHT * scale) / 2
-  stage.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`
+  // rotate(180) um den Ursprung + Translation um die volle Bühne =
+  // Drehung der Bühne "an Ort" ((x,y) → (W−x, H−y))
+  const rotation = rotate180 ? ` translate(${OUTPUT_WIDTH}px, ${OUTPUT_HEIGHT}px) rotate(180deg)` : ''
+  stage.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})${rotation}`
 }
 window.addEventListener('resize', fitStage)
 fitStage()
+
+// "Identifizieren" aus der Admin-UI: Rolle 4 s gross anzeigen
+let identifyTimer: number | null = null
+window.player.onIdentify(() => {
+  identifyEl.classList.add('active')
+  if (identifyTimer) window.clearTimeout(identifyTimer)
+  identifyTimer = window.setTimeout(() => identifyEl.classList.remove('active'), 4000)
+})
 
 function mediaUrl(content: ScreenContent): string {
   const encoded = content.file.split('/').map(encodeURIComponent).join('/')
@@ -77,6 +93,7 @@ function testPatternSvg(screen: ScreenName): string {
 interface QuadView {
   root: HTMLDivElement
   layerHost: HTMLDivElement
+  cornerMarker: HTMLDivElement
   currentLayer: HTMLDivElement | null
   currentFile: string | null
   syncController: SyncController | null
@@ -102,8 +119,20 @@ for (const screen of WINDOW_SCREENS[role]) {
   pattern.innerHTML = testPatternSvg(screen)
   root.appendChild(pattern)
 
+  const cornerMarker = document.createElement('div')
+  cornerMarker.className = 'corner-marker'
+  root.appendChild(cornerMarker)
+
   stage.appendChild(root)
-  quads.set(screen, { root, layerHost, currentLayer: null, currentFile: null, syncController: null })
+  quads.set(screen, { root, layerHost, cornerMarker, currentLayer: null, currentFile: null, syncController: null })
+}
+
+/** Ecken-Koordinaten im Inhalts-Raster (1080×1920) für den Fokus-Marker. */
+const CORNER_POS: Record<'tl' | 'tr' | 'br' | 'bl', { x: number; y: number }> = {
+  tl: { x: 0, y: 0 },
+  tr: { x: CONTENT_WIDTH, y: 0 },
+  br: { x: CONTENT_WIDTH, y: CONTENT_HEIGHT },
+  bl: { x: 0, y: CONTENT_HEIGHT },
 }
 
 function createMediaElement(content: ScreenContent): HTMLElement {
@@ -286,6 +315,12 @@ function applyPlayback(view: QuadView, content: ScreenContent | null, state: App
 }
 
 function render(state: AppState): void {
+  const wantRotate = state.windowSettings?.rotation?.[role] === 180
+  if (wantRotate !== rotate180) {
+    rotate180 = wantRotate
+    fitStage()
+  }
+
   for (const screen of WINDOW_SCREENS[role]) {
     const view = quads.get(screen)
     if (!view) continue
@@ -297,6 +332,20 @@ function render(state: AppState): void {
     }
 
     view.root.classList.toggle('show-testpattern', state.testPattern)
+
+    // Fokus-Marker der Kalibrier-UI: die gerade bearbeitete Ecke hervorheben.
+    // Nur zusammen mit dem Testbild — ein vergessener Fokus (Admin-Browser
+    // einfach zugeklappt) darf im Gottesdienst keinen Marker stehen lassen.
+    const focus = state.calibrationFocus
+    if (focus && focus.screen === screen && state.testPattern) {
+      const pos = CORNER_POS[focus.corner]
+      view.cornerMarker.style.left = `${pos.x}px`
+      view.cornerMarker.style.top = `${pos.y}px`
+      view.cornerMarker.classList.add('active')
+    } else {
+      view.cornerMarker.classList.remove('active')
+    }
+
     const content = state.screens[screen]
     setQuadContent(view, content, state.transitionMs)
     applyPlayback(view, content, state)

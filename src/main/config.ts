@@ -53,7 +53,9 @@ export function defaultConfig(): AppConfig {
       canvasWmm: 1000,
       canvasHmm: 1780,
       gapsMm: [300, 4000, 300],
+      yOffsetsMm: [0, 0, 0, 0],
     },
+    windows: { assignments: {}, rotation: {} },
   }
 }
 
@@ -67,6 +69,10 @@ function mergeWithDefaults(loaded: Partial<AppConfig>): AppConfig {
     screens: { ...def.screens, ...(loaded.screens ?? {}) },
     projectors: loaded.projectors ?? def.projectors,
     layout: { ...def.layout, ...(loaded.layout ?? {}) },
+    windows: {
+      assignments: { ...(loaded.windows?.assignments ?? {}) },
+      rotation: { ...(loaded.windows?.rotation ?? {}) },
+    },
   }
   // Nur bekannte Screens behalten
   for (const key of Object.keys(merged.screens)) {

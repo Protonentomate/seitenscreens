@@ -1,45 +1,23 @@
 <script lang="ts">
-  import type { AppState, MediaFileInfo, TemplateInfo } from '../../shared/types'
+  import type { AppState, TemplateInfo } from '../../shared/types'
   import { SCREEN_NAMES, type ScreenName } from '../../shared/screens'
-
-  /** Kurzlabels für die Leinwände, wie sie das Team kennt. */
-  const SHORT: Record<ScreenName, string> = {
-    LinksLinks: 'LL',
-    LinksRechts: 'LR',
-    RechtsLinks: 'RL',
-    RechtsRechts: 'RR',
-  }
-
-  // Im Dev-Modus läuft die Seite auf dem Vite-Server, die API auf 8080
-  const apiBase = import.meta.env.DEV ? 'http://localhost:8080' : ''
-  const wsUrl = import.meta.env.DEV
-    ? 'ws://localhost:8080/ws'
-    : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
+  import {
+    SHORT,
+    apiBase,
+    wsUrl,
+    adminUrl,
+    thumbUrl,
+    fmtTime,
+    templateApplyPath,
+    groupNames,
+    groupLabel,
+    singleGroup,
+  } from '../lib/client'
 
   let state = $state<AppState | null>(null)
   let connected = $state(false)
   let banner = $state<{ kind: 'error' | 'ok'; text: string } | null>(null)
   let bannerTimer: ReturnType<typeof setTimeout> | null = null
-  let showSettings = $state(false)
-
-  // Einstellungs-Formular
-  let formMediaRoot = $state('')
-  let formTransitionMs = $state(300)
-  let formHostLinks = $state('')
-  let formHostRechts = $state('')
-  let formCanvasW = $state(1000)
-  let formCanvasH = $state(1780)
-  let formGap0 = $state(300)
-  let formGap1 = $state(4000)
-  let formGap2 = $state(300)
-
-  // Upload-Formular (Verwaltung)
-  let uploadFile = $state<File | null>(null)
-  let uploadTemplateName = $state('')
-  let uploadMode = $state<'clone' | 'span' | 'single'>('clone')
-  let uploadTarget = $state<ScreenName>('LinksLinks')
-  let uploadFit = $state<'contain' | 'cover'>('contain')
-  let uploading = $state(false)
 
   function showBanner(kind: 'error' | 'ok', text: string): void {
     banner = { kind, text }
@@ -81,25 +59,36 @@
     }
   }
 
-  function mediaUrl(file: string): string {
-    return `${apiBase}/media/${file.split('/').map(encodeURIComponent).join('/')}`
-  }
+  // --- Vorlagen-Gruppen (Tabs) ---
 
-  function thumbUrl(info: MediaFileInfo | { file: string; kind: string }): string {
-    if (info.kind === 'video') {
-      return `${apiBase}/thumbs/${info.file.split('/').map(encodeURIComponent).join('/')}`
+  const groups = $derived(state ? groupNames(state.mediaIndex.templates, state.mediaIndex.singles) : [])
+  let selectedGroup = $state<string | null>(null)
+  // Start-Tab: Pimi (falls vorhanden), sonst erste Gruppe — einmalig, danach
+  // bleibt die Auswahl des Anwenders bestehen
+  $effect(() => {
+    if (selectedGroup === null && groups.length > 0) {
+      selectedGroup = groups[0]
     }
-    return mediaUrl(info.file)
-  }
+    // Gewählte Gruppe verschwunden (Ordner umbenannt) → zurück auf die erste
+    if (selectedGroup !== null && groups.length > 0 && !groups.includes(selectedGroup)) {
+      selectedGroup = groups[0]
+    }
+  })
+  const visibleTemplates = $derived(
+    state ? state.mediaIndex.templates.filter((t) => t.group === (selectedGroup ?? '')) : [],
+  )
+  const visibleSingles = $derived(
+    state ? state.mediaIndex.singles.filter((s) => singleGroup(s.file) === (selectedGroup ?? '')) : [],
+  )
 
   async function applyTemplate(t: TemplateInfo): Promise<void> {
-    const name = encodeURIComponent(t.name)
+    const path = templateApplyPath(t)
     if (!t.complete) {
       if (!confirm(`„${t.name}" ist unvollständig (${t.warnings[0] ?? ''}).\nNur die vorhandenen Leinwände wechseln?`)) return
-      if (await api(`/api/template/${name}/apply?force=1`)) showBanner('ok', `„${t.name}" angewendet (teilweise)`)
+      if (await api(`${path}?force=1`)) showBanner('ok', `„${t.name}" angewendet (teilweise)`)
       return
     }
-    if (await api(`/api/template/${name}/apply`)) showBanner('ok', `„${t.name}" angewendet`)
+    if (await api(path)) showBanner('ok', `„${t.name}" angewendet`)
   }
 
   async function setSingle(file: string, screen: ScreenName | 'alle'): Promise<void> {
@@ -139,86 +128,8 @@
     return () => clearInterval(interval)
   })
 
-  function fmtTime(s: number): string {
-    const m = Math.floor(s / 60)
-    const sec = Math.floor(s % 60)
-    return `${m}:${String(sec).padStart(2, '0')}`
-  }
-
   async function seekTo(toS: number): Promise<void> {
     await api(`/api/video/seek?toS=${toS.toFixed(2)}`)
-  }
-
-  function openSettings(): void {
-    if (!state) return
-    formMediaRoot = state.mediaRoot
-    formTransitionMs = state.transitionMs
-    formHostLinks = state.projectors.find((p) => p.id === 'links')?.host ?? ''
-    formHostRechts = state.projectors.find((p) => p.id === 'rechts')?.host ?? ''
-    formCanvasW = state.layout.canvasWmm
-    formCanvasH = state.layout.canvasHmm
-    formGap0 = state.layout.gapsMm[0]
-    formGap1 = state.layout.gapsMm[1]
-    formGap2 = state.layout.gapsMm[2]
-    showSettings = true
-  }
-
-  async function saveSettings(): Promise<void> {
-    const ok = await api('/api/config', {
-      mediaRoot: formMediaRoot,
-      transitionMs: formTransitionMs,
-      projectors: [
-        { id: 'links', host: formHostLinks },
-        { id: 'rechts', host: formHostRechts },
-      ],
-      layout: {
-        canvasWmm: formCanvasW,
-        canvasHmm: formCanvasH,
-        gapsMm: [formGap0, formGap1, formGap2],
-      },
-    })
-    if (ok) {
-      showBanner('ok', 'Einstellungen gespeichert')
-      showSettings = false
-    }
-  }
-
-  async function submitUpload(event: SubmitEvent): Promise<void> {
-    event.preventDefault()
-    if (!uploadFile || !uploadTemplateName.trim()) {
-      showBanner('error', 'Datei und Vorlagen-Name angeben')
-      return
-    }
-    uploading = true
-    try {
-      const form = new FormData()
-      form.append('templateName', uploadTemplateName.trim())
-      form.append('mode', uploadMode)
-      form.append('fit', uploadFit)
-      if (uploadMode === 'single') form.append('target', uploadTarget)
-      form.append('file', uploadFile)
-      const res = await fetch(`${apiBase}/api/upload`, { method: 'POST', body: form })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok || data.ok === false) {
-        showBanner('error', data.error ?? `Upload fehlgeschlagen (${res.status})`)
-      } else {
-        showBanner('ok', 'Hochgeladen — Verarbeitung läuft')
-        uploadFile = null
-        uploadTemplateName = ''
-      }
-    } catch (err) {
-      showBanner('error', `Upload fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      uploading = false
-    }
-  }
-
-  const jobStatusLabel: Record<string, string> = {
-    queued: 'Wartet',
-    'waiting-live': 'Wartet (Video läuft auf den Leinwänden)',
-    running: 'Verarbeitet…',
-    done: 'Fertig',
-    error: 'Fehler',
   }
 </script>
 
@@ -227,7 +138,7 @@
     <h1>Seitenscreens</h1>
     <span class="dot" class:on={connected} title={connected ? 'Verbunden' : 'Getrennt'}></span>
     <div class="spacer"></div>
-    <button class="ghost" onclick={openSettings}>⚙︎ Einstellungen</button>
+    <a class="adminlink" href={adminUrl}>Verwaltung →</a>
   </header>
 
   {#if banner}
@@ -239,8 +150,8 @@
   {:else}
     {#if !state.mediaIndex.mediaRootExists}
       <div class="banner error">
-        Medienordner nicht gefunden{state.mediaRoot ? `: ${state.mediaRoot}` : ' (nicht konfiguriert)'} — unter
-        „Einstellungen" den Pfad zum Nextcloud-Ordner „_Vorlagen" setzen.
+        Medienordner nicht gefunden{state.mediaRoot ? `: ${state.mediaRoot}` : ' (nicht konfiguriert)'} — in der
+        „Verwaltung" den Pfad zum Nextcloud-Ordner „_Vorlagen" setzen.
       </div>
     {/if}
 
@@ -311,12 +222,19 @@
 
     <section>
       <h2>Vorlagen</h2>
+      {#if groups.length > 1}
+        <div class="tabs">
+          {#each groups as g (g)}
+            <button class:selected={selectedGroup === g} onclick={() => (selectedGroup = g)}>{groupLabel(g)}</button>
+          {/each}
+        </div>
+      {/if}
       {#if state.mediaIndex.templates.length === 0}
         <p class="muted">Keine Vorlagen gefunden.</p>
       {/if}
       <div class="grid">
-        {#each state.mediaIndex.templates as t (t.name)}
-          <div class="card" class:current={state.activeTemplate === t.name}>
+        {#each visibleTemplates as t (t.ref)}
+          <div class="card" class:current={state.activeTemplate === t.ref}>
             <div class="thumbs">
               {#each SCREEN_NAMES as screen (screen)}
                 {@const f = t.files[screen]}
@@ -326,12 +244,12 @@
               {/each}
             </div>
             <div class="cardfoot">
-              <span class="tname" title={t.name}>{t.name}</span>
+              <span class="tname" title={t.ref}>{t.name}</span>
               {#if t.warnings.length > 0}
                 <span class="warn" title={t.warnings.join('\n')}>⚠</span>
               {/if}
               <button class="primary" onclick={() => applyTemplate(t)}>
-                {state.activeTemplate === t.name ? 'Aktiv' : 'Anwenden'}
+                {state.activeTemplate === t.ref ? 'Aktiv' : 'Anwenden'}
               </button>
             </div>
           </div>
@@ -340,64 +258,12 @@
     </section>
 
     <section>
-      <h2>Verwaltung — Neue Vorlage hochladen</h2>
-      <form class="upload" onsubmit={submitUpload}>
-        <div class="uploadrow">
-          <input
-            type="file"
-            accept=".jpg,.jpeg,.png,.webp,.mp4,.mov,.webm,.m4v"
-            onchange={(e) => (uploadFile = (e.currentTarget as HTMLInputElement).files?.[0] ?? null)}
-          />
-          <input
-            type="text"
-            class="tinput"
-            placeholder="Vorlagen-Name (neu oder bestehend)"
-            bind:value={uploadTemplateName}
-            list="template-names"
-          />
-          <datalist id="template-names">
-            {#each state.mediaIndex.templates as t (t.name)}<option value={t.name}></option>{/each}
-          </datalist>
-        </div>
-        <div class="uploadrow">
-          <label class="radio"><input type="radio" bind:group={uploadMode} value="clone" /> Gleich auf allen 4</label>
-          <label class="radio"><input type="radio" bind:group={uploadMode} value="span" /> Über alle 4 spannen (mit Abständen)</label>
-          <label class="radio">
-            <input type="radio" bind:group={uploadMode} value="single" /> Eine Leinwand:
-            <select bind:value={uploadTarget} disabled={uploadMode !== 'single'}>
-              {#each SCREEN_NAMES as s (s)}<option value={s}>{SHORT[s]}</option>{/each}
-            </select>
-          </label>
-          <span class="sep"></span>
-          <label class="radio"><input type="radio" bind:group={uploadFit} value="contain" /> Einpassen</label>
-          <label class="radio"><input type="radio" bind:group={uploadFit} value="cover" /> Füllen</label>
-          <button class="primary" type="submit" disabled={uploading}>
-            {uploading ? 'Lädt hoch…' : 'Hochladen & verarbeiten'}
-          </button>
-        </div>
-      </form>
-      {#if state.jobs.length > 0}
-        <div class="jobs">
-          {#each [...state.jobs].reverse() as job (job.id)}
-            <div class="job {job.status}">
-              <span class="joblabel">{job.label}</span>
-              <span class="jobstatus">{jobStatusLabel[job.status] ?? job.status}{job.error ? ` — ${job.error}` : ''}</span>
-              {#if job.status === 'running'}
-                <progress value={job.progress} max="1"></progress>
-              {/if}
-            </div>
-          {/each}
-        </div>
-      {/if}
-    </section>
-
-    <section>
-      <h2>Einzelbilder</h2>
-      {#if state.mediaIndex.singles.length === 0}
-        <p class="muted">Keine losen Dateien im Ordner.</p>
+      <h2>Einzelbilder {selectedGroup ? `— ${groupLabel(selectedGroup)}` : ''}</h2>
+      {#if visibleSingles.length === 0}
+        <p class="muted">Keine losen Dateien in dieser Gruppe.</p>
       {/if}
       <div class="grid singles">
-        {#each state.mediaIndex.singles as s (s.file)}
+        {#each visibleSingles as s (s.file)}
           <div class="card">
             <div class="singlethumb"><img src={thumbUrl(s)} alt={s.file} loading="lazy" /></div>
             <div class="cardfoot">
@@ -414,144 +280,16 @@
       </div>
     </section>
   {/if}
-
-  {#if showSettings}
-    <div class="overlay" role="presentation" onclick={(e) => e.target === e.currentTarget && (showSettings = false)}>
-      <div class="dialog">
-        <h2>Einstellungen</h2>
-        <label>
-          Medienordner (Nextcloud „_Vorlagen")
-          <input type="text" bind:value={formMediaRoot} placeholder="z.B. C:\Users\Techniker\Nextcloud\…\_Vorlagen" />
-          <small>Pfad auf dem Beamer-PC. Wird geprüft, bevor er übernommen wird.</small>
-        </label>
-        <label>
-          Überblendung (ms)
-          <input type="number" bind:value={formTransitionMs} min="0" max="5000" step="50" />
-        </label>
-        <label>
-          Beamer links (IP/Host)
-          <input type="text" bind:value={formHostLinks} />
-        </label>
-        <label>
-          Beamer rechts (IP/Host)
-          <input type="text" bind:value={formHostRechts} />
-        </label>
-        <fieldset class="layoutset">
-          <legend>Wand-Layout (für „über alle 4 spannen")</legend>
-          <div class="layoutgrid">
-            <label>Leinwand-Breite (mm)<input type="number" bind:value={formCanvasW} min="100" /></label>
-            <label>Leinwand-Höhe (mm)<input type="number" bind:value={formCanvasH} min="100" /></label>
-            <label>Abstand LL–LR (mm)<input type="number" bind:value={formGap0} min="0" /></label>
-            <label>Abstand Mitte/Bühne (mm)<input type="number" bind:value={formGap1} min="0" /></label>
-            <label>Abstand RL–RR (mm)<input type="number" bind:value={formGap2} min="0" /></label>
-          </div>
-        </fieldset>
-        <div class="dialogfoot">
-          <button onclick={() => (showSettings = false)}>Abbrechen</button>
-          <button class="primary" onclick={saveSettings}>Speichern</button>
-        </div>
-      </div>
-    </div>
-  {/if}
 </main>
 
 <style>
-  :global(body) {
-    margin: 0;
-    background: #14161a;
-    color: #e8eaed;
-    font-family: system-ui, -apple-system, sans-serif;
-  }
-  main {
-    max-width: 1100px;
-    margin: 0 auto;
-    padding: 12px 16px 48px;
-  }
-  header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 0 12px;
-  }
-  h1 {
-    font-size: 20px;
-    margin: 0;
-  }
-  h2 {
-    font-size: 15px;
-    margin: 22px 0 10px;
-    color: #aab0b8;
-    font-weight: 600;
-  }
-  .spacer {
-    flex: 1;
-  }
-  .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #d9534f;
-  }
-  .dot.on {
-    background: #4caf50;
-  }
-  .banner {
-    padding: 10px 14px;
-    border-radius: 8px;
-    margin-bottom: 10px;
+  .adminlink {
+    color: #8ab0e8;
     font-size: 14px;
+    text-decoration: none;
   }
-  .banner.error {
-    background: #5a2320;
-    border: 1px solid #a94442;
-  }
-  .banner.ok {
-    background: #1e4620;
-    border: 1px solid #3c763d;
-  }
-  .muted {
-    color: #777;
-  }
-
-  button {
-    background: #2a2e35;
-    color: #e8eaed;
-    border: 1px solid #3d434c;
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 14px;
-    cursor: pointer;
-  }
-  button:hover {
-    background: #343a43;
-  }
-  button.primary {
-    background: #2b5ca8;
-    border-color: #3a6fc4;
-  }
-  button.primary:hover {
-    background: #336ac0;
-  }
-  button.danger {
-    background: #a83232;
-    border-color: #c44;
-  }
-  button.big {
-    font-size: 16px;
-    padding: 12px 22px;
-    font-weight: 600;
-  }
-  button.active {
-    background: #2b5ca8;
-  }
-  button.ghost {
-    background: transparent;
-    border-color: transparent;
-  }
-  button.mini {
-    padding: 4px 8px;
-    font-size: 12px;
-    border-radius: 6px;
+  .adminlink:hover {
+    text-decoration: underline;
   }
 
   .actions {
@@ -661,58 +399,6 @@
     flex: 1;
   }
 
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 12px;
-  }
-  .card {
-    background: #1c1f24;
-    border: 1px solid #2c313a;
-    border-radius: 10px;
-    padding: 10px;
-  }
-  .card.current {
-    border-color: #3a6fc4;
-    box-shadow: 0 0 0 1px #3a6fc4;
-  }
-  .thumbs {
-    display: flex;
-    gap: 4px;
-  }
-  .thumb {
-    flex: 1;
-    aspect-ratio: 9 / 16;
-    background: #000;
-    border-radius: 4px;
-    overflow: hidden;
-    display: flex;
-    justify-content: center;
-  }
-  .thumb.missing {
-    background: repeating-linear-gradient(45deg, #222, #222 6px, #2a2a2a 6px, #2a2a2a 12px);
-  }
-  .thumb img {
-    height: 100%;
-    object-fit: cover;
-  }
-  .cardfoot {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding-top: 8px;
-  }
-  .tname {
-    flex: 1;
-    font-size: 14px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .warn {
-    color: #f0ad4e;
-    cursor: help;
-  }
   .singles .singlethumb {
     aspect-ratio: 9 / 16;
     max-height: 180px;
@@ -730,142 +416,5 @@
     display: flex;
     gap: 4px;
     padding-top: 8px;
-  }
-
-  .upload {
-    background: #1c1f24;
-    border: 1px solid #2c313a;
-    border-radius: 10px;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .uploadrow {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    flex-wrap: wrap;
-  }
-  .tinput {
-    flex: 1;
-    min-width: 220px;
-    padding: 8px 10px;
-    background: #14161a;
-    color: #e8eaed;
-    border: 1px solid #3d434c;
-    border-radius: 8px;
-    font-size: 14px;
-  }
-  .radio {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-    color: #cdd2d9;
-  }
-  .sep {
-    flex: 1;
-  }
-  .jobs {
-    margin-top: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .job {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 13px;
-    background: #1c1f24;
-    border: 1px solid #2c313a;
-    border-radius: 8px;
-    padding: 8px 12px;
-  }
-  .job.error {
-    border-color: #a94442;
-  }
-  .job.done {
-    opacity: 0.65;
-  }
-  .joblabel {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .jobstatus {
-    color: #aab0b8;
-  }
-  .job progress {
-    width: 140px;
-    accent-color: #3a6fc4;
-  }
-  .layoutset {
-    border: 1px solid #3d434c;
-    border-radius: 8px;
-    margin-bottom: 12px;
-    padding: 10px;
-  }
-  .layoutset legend {
-    font-size: 12px;
-    color: #aab0b8;
-    padding: 0 6px;
-  }
-  .layoutgrid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-  .layoutgrid label {
-    margin-bottom: 0;
-  }
-
-  .overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10;
-  }
-  .dialog {
-    background: #1c1f24;
-    border: 1px solid #2c313a;
-    border-radius: 12px;
-    padding: 20px;
-    width: min(480px, 92vw);
-  }
-  .dialog h2 {
-    margin-top: 0;
-  }
-  .dialog label {
-    display: block;
-    font-size: 13px;
-    color: #aab0b8;
-    margin-bottom: 12px;
-  }
-  .dialog input {
-    display: block;
-    width: 100%;
-    box-sizing: border-box;
-    margin-top: 4px;
-    padding: 8px 10px;
-    background: #14161a;
-    color: #e8eaed;
-    border: 1px solid #3d434c;
-    border-radius: 8px;
-    font-size: 14px;
-  }
-  .dialog small {
-    color: #667;
-  }
-  .dialogfoot {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    padding-top: 6px;
   }
 </style>
