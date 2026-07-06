@@ -83,7 +83,12 @@ Die POST-Endpunkte am Tabellenende sind primär für die Admin-UI gedacht.
 | `GET /api/testpattern/on\|off` | Testbild für Kalibrier-Kontrolle |
 | `GET /api/projector/on\|off` | Beide Beamer schalten (`/api/projector/{links\|rechts}/on\|off` einzeln) |
 | `GET /api/state`, `/api/health`, `/api/templates` | Zustand, Diagnose, Medienliste |
-| `POST /api/upload` | Multipart-Upload: `mode` = `single`\|`clone`\|`span`\|`span2`, `fit` = `contain`\|`cover`\|`stretch`, `gaps` = `exact`\|`none` (Übergang beim Spannen), `mirror` = `1`\|`0` (nur span2: rechte Seite spiegeln), `group` = Gruppen-Ordner (optional) |
+| `GET /api/button/{Name}` | Quadratisches Knopf-Icon der Vorlage (Standard 144×144 JPEG; `?size=`, `?format=png`), direkt als Stream-Deck-Knopfbild nutzbar |
+| `GET /api/button/{Gruppe}/{Name}` | Knopf-Icon einer Vorlage aus einer bestimmten Gruppe |
+| `POST /api/upload` | Multipart-Upload: `mode` = `single`\|`clone`\|`span`\|`span2`\|`quad`, `fit` = `contain`\|`cover`\|`stretch`, `gaps` = `exact`\|`none` (Übergang beim Spannen), `mirror` = `1`\|`0` (nur span2: rechte Seite spiegeln), `group` = Gruppen-Ordner (optional). Bei `mode=quad` je eine Datei pro Leinwand über die Feldnamen `fileLinksLinks`/`fileLinksRechts`/`fileRechtsLinks`/`fileRechtsRechts` mit eigener Einpassung `fitLinksLinks` usw. `loopSmooth` = `1`\|`0` (Video-Loop weich überblenden), `loopCrossfadeS` = Überblendungsdauer in s (Standard 0,5) |
+| `POST /api/template/{Name}/rerender` | Vorlage aus gesichertem Original + `_meta.json` neu rechnen (z.B. nach geänderten Wand-Massen) |
+| `POST /api/template/{Gruppe}/{Name}/rerender` | dasselbe für eine Vorlage in einer Gruppe |
+| `POST /api/rerender-all?modes=span,span2` | Alle Vorlagen der genannten Span-Modi neu rechnen |
 | `POST /api/trash` | In den Papierkorb (`_Papierkorb/` im Medienordner) verschieben, Body `{type:'template', ref}` oder `{type:'single', file}` |
 | `POST /api/calibration/{Screen}` | Leinwand-Ecken setzen, Body `{corners:{tl:{x,y},tr,br,bl}}` |
 | `POST /api/calibration/focus` | Ecke auf der Leinwand magenta markieren, Body `{screen,corner}` (`{}` löscht die Markierung) |

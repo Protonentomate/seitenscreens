@@ -12,12 +12,15 @@
     "start": "electron-vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "import-streamfx": "tsx tools/import-streamfx.ts"
+    "import-streamfx": "tsx tools/import-streamfx.ts",
+    "vendor:ffmpeg": "node scripts/vendor-ffmpeg.mjs",
+    "dist:win": "npm run vendor:ffmpeg && npm run build && electron-builder --win --x64"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@types/node": "^26.1.0",
     "electron": "^43.0.0",
+    "electron-builder": "^25.1.8",
     "electron-vite": "^5.0.0",
     "svelte": "^5.56.4",
     "tsx": "^4.23.0",

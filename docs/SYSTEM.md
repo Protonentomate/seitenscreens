@@ -142,7 +142,12 @@ Referenz-ffmpeg-Flags: `-c:v libx264 -preset veryfast -crf 18 -profile:v high
   („Je über 2 spannen"): Motiv über die beiden linken Leinwände gespannt
   (inkl. deren Lücke, `gapsMm[0]`) und identisch über die beiden rechten
   (`gapsMm[2]`) — passt für normale Querformat-Motive deutlich besser als
-  span über alle 4.
+  span über alle 4. **`quad`** („4 Dateien, je eine pro Leinwand"): pro
+  Leinwand (LL/LR/RL/RR) eine eigene Datei mit eigener Einpassung — Bild und
+  Video gemischt erlaubt; fehlende Leinwände ergeben eine unvollständige
+  Vorlage. Die Dateien reisen unter den Feldnamen
+  `fileLinksLinks`/`fileLinksRechts`/`fileRechtsLinks`/`fileRechtsRechts`
+  (Einpassung je `fitLinksLinks` usw.).
 - **Einpassen**: `contain` (Einpassen), `cover` (Füllen), **`stretch`**
   (Strecken — verzerrt auf die volle Fläche).
 - **Übergang zwischen den Leinwänden** (nur `span`/`span2`, Feld `gaps`, in
@@ -151,6 +156,11 @@ Referenz-ffmpeg-Flags: `-c:v libx264 -preset veryfast -crf 18 -profile:v high
   und Höhenversatz maskieren Bildteile, durchlaufende Motive fluchten
   physisch. `none` schneidet nichts ab — die Leinwände teilen das Motiv
   nahtlos, Lücken und Versatz werden ignoriert.
+- **Loop glätten** (nur Videos, Felder `loopSmooth`, `loopCrossfadeS`): Option
+  „Loop glätten (Ende weich in Anfang überblenden)" blendet das Videoende weich
+  in den Anfang (Standard-Überblendung 0,5 s, einstellbar) — Motion-Graphics,
+  deren Ende nicht exakt zum Anfang passt, loopen so nahtlos. Das Video wird
+  dabei um die Crossfade-Dauer kürzer.
 - **Namensregeln**: Vorlagen-/Gruppen-Namen, die mit „serie", „archiv", `_`
   oder `.` beginnen, lehnt der Upload ab (der Index würde sie ignorieren).
 - **Sofort-Verarbeitung**: Jobs laufen sofort, auch wenn ein Video live läuft.
@@ -167,6 +177,17 @@ Referenz-ffmpeg-Flags: `-c:v libx264 -preset veryfast -crf 18 -profile:v high
   derselben Zuschnitt-Geometrie wie der Server (geteiltes Modul
   `src/shared/span.ts`). Dazu ein Format-Hinweis, welches Seitenverhältnis
   für den gewählten Modus ideal ist (aus dem Wand-Layout gerechnet).
+
+### Re-Render (Admin-Tab „Inhalte")
+
+Jede Upload-Verarbeitung sichert das unveränderte Original (`_original` +
+`_meta.json` mit Modus/Einpassung). Der Tab „Inhalte" bietet pro Vorlage einen
+Knopf „↻ Neu rechnen" und oben „↻ Alle Span-Vorlagen neu rechnen" — die Vorlage
+wird aus ihrem Original neu gespannt, ohne erneutes Hochladen. Vor allem nach
+geänderten Wand-Massen (Layout) fluchten so alle Span-Vorlagen wieder; das
+Original bleibt erhalten. Endpunkte: `POST /api/template/{Name}/rerender`,
+`POST /api/template/{Gruppe}/{Name}/rerender`,
+`POST /api/rerender-all?modes=span,span2`.
 
 ### Papierkorb (Admin-Tab „Inhalte")
 
@@ -210,13 +231,15 @@ Env-Overrides: `SEITENSCREENS_CONFIG`, `SEITENSCREENS_FFMPEG`, `SEITENSCREENS_FF
 | M3 | Medien-Index, Schattencache, REST/WS-API, Control-UI, Beamer ein/aus, Video-Pause/Seek | ✅ |
 | M4 | Admin-Upload: Normalisieren, single/clone/**span mit Leinwand-Abständen**, Job-Queue | 🔨 |
 | M5 | Kalibrier-UI: Ecken ziehen am Live-Output (Admin-Tab „Kalibrierung") | ✅ (Re-Render-Knopf & Kalibrier-Export → M6) |
-| M6 | Windows-Kiosk: Autostart, Preflight-Ampel, NSIS-Installer, ffmpeg-Vendoring (Display-Mapping bereits vorgezogen, s.u.) | ⬜ |
+| M6 | Windows-Kiosk: Autostart, Preflight-Ampel, NSIS-Installer, ffmpeg-Vendoring (Display-Mapping bereits vorgezogen, s.u.) | 🔨 (NSIS-Installer + ffmpeg-Vendoring da, s.u.; Kiosk/Autostart-Feinschliff offen) |
 
 **Kalibrier-UI (M5)**: pro Beamer-Fenster eine SVG-Ansicht (1920×1080) mit
 ziehbaren Ecken; Änderungen streamen live auf die Leinwände (gedrosselt
 ~20/s, Config-Speichern entprellt 800 ms). Pfeiltasten = 1 px, Shift = 10 px,
 Alt = 0,1 px. Die gewählte Ecke wird auf der echten Leinwand magenta markiert
-(Testbild einschalten hilft).
+(Testbild einschalten hilft). Für pixelgenaues Justieren gibt es pro Fenster
+einen Zoom-Regler (1×–8×, zentriert auf die gewählte Ecke) und x/y-Zahlenfelder
+für die gewählte Ecke unter der Ansicht.
 
 **Vorgezogen aus M6 — Display-Zuordnung** (Admin-Tab „Anzeige"): pro
 Beamer-Fenster das physische Display (HDMI/DisplayPort-Ausgang) wählen
@@ -232,9 +255,20 @@ Neue Endpunkte dazu: `POST /api/calibration/{Screen}`,
 `GET /api/template/{Gruppe}/{Name}/apply` (ohne Gruppe nur bei eindeutigem
 Namen, sonst 409 mit Kandidatenliste). Übersicht in der README.
 
-Auf echte Hardware verschoben (M6): Degradations-Fallback bei Frame-Drops
-während Überblendungen, Verifikation Hardware-Decode (D3D11), Worst-Case-Test
-4 verschiedene Videos + Crossfade auf HD 630, Kaltstart-Budget ≤ 60 s.
+**Vorgezogen aus M6 — Installer & ffmpeg-Vendoring**: `electron-builder.yml`,
+`scripts/vendor-ffmpeg.mjs` und die npm-Skripte `vendor:ffmpeg`/`dist:win`
+erzeugen einen NSIS-Ein-Klick-Installer mit eingebettetem ffmpeg/ffprobe (keine
+PATH-Installation mehr nötig). Der ffmpeg-Pfad wird zur Laufzeit aufgelöst:
+gebündelt im Installer, sonst `SEITENSCREENS_FFMPEG`/PATH. Der Installer-Build
+muss auf Windows bzw. in CI (windows-latest) laufen — Cross-Build vom Mac ist
+nicht zuverlässig. `vendor/` und `release/` sind gitignored (ffmpeg wird beim
+Build heruntergeladen, gyan.dev = GPL-Build). Details:
+[INSTALLATION-WINDOWS.md](INSTALLATION-WINDOWS.md), Abschnitt „Installer bauen".
+
+Auf echte Hardware verschoben (M6): Kiosk/Autostart-Feinschliff,
+Degradations-Fallback bei Frame-Drops während Überblendungen, Verifikation
+Hardware-Decode (D3D11), Worst-Case-Test 4 verschiedene Videos + Crossfade auf
+HD 630, Kaltstart-Budget ≤ 60 s.
 
 ## 6. Bekannte Punkte / Wartungshinweise
 

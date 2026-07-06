@@ -47,13 +47,17 @@ export function defaultConfig(): AppConfig {
       { id: 'links', name: 'Beamer links', host: '192.168.100.95', driver: 'control-cgi' },
       { id: 'rechts', name: 'Beamer rechts', host: '192.168.100.96', driver: 'control-cgi' },
     ],
-    // Platzhalter-Masse — echte Werte werden bei der Einrichtung in der
-    // Kirche ausgemessen und in den Einstellungen eingetragen
+    // Näherungswerte, aus den Kalibrier-Ecken abgeleitet (Keystone verfälscht
+    // sie etwas — besser als 0, aber in der Kirche nachmessen). canvasWmm=1000
+    // als Bezug; canvasHmm aus dem gemittelten Seitenverhältnis; die Abstände
+    // innerhalb je eines Beamers und der Höhenversatz (äussere Leinwände hängen
+    // tiefer) direkt aus den Ecken. Der Mittelabstand über der Bühne lässt sich
+    // aus zwei getrennten Beamern NICHT ableiten → grobe Schätzung, unbedingt messen.
     layout: {
       canvasWmm: 1000,
-      canvasHmm: 1780,
-      gapsMm: [300, 4000, 300],
-      yOffsetsMm: [0, 0, 0, 0],
+      canvasHmm: 1810,
+      gapsMm: [1350, 4000, 1410],
+      yOffsetsMm: [340, 0, 0, 300],
     },
     windows: { assignments: {}, rotation: {} },
     defaultGroup: '',

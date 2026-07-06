@@ -4,10 +4,11 @@ Anleitung für die Einrichtung auf dem Kirchen-PC oder einem neuen Rechner.
 Für die Schnellversion (Desktop-Icon per Doppelklick, Autostart-Skript)
 siehe [INSTALLATION-KURZ.md](INSTALLATION-KURZ.md).
 
-> **Stand:** Bis Meilenstein M6 fertig ist (NSIS-Installer, Autostart,
-> gebündeltes ffmpeg), läuft die App über Node.js aus dem Quellcode.
-> Die Schritte hier funktionieren jetzt schon — der Installer macht sie
-> später überflüssig. Abschnitte, die M6 betreffen, sind markiert.
+> **Stand:** Der NSIS-Installer mit gebündeltem ffmpeg existiert bereits
+> (Abschnitt 7 „Installer bauen") — der Kiosk/Autostart-Feinschliff aus M6
+> ist noch offen. Die App lässt sich weiterhin über Node.js aus dem Quellcode
+> starten (Abschnitte 2–3); die Schritte hier funktionieren jetzt schon.
+> Abschnitte, die den offenen M6-Rest betreffen, sind markiert.
 
 ## 1. Voraussetzungen
 
@@ -52,9 +53,11 @@ npm start
    Nextcloud-`_Vorlagen`-Pfad setzen, z.B.
    `C:\Users\Techniker\Nextcloud\Technische Dienste\Licht_Video\SeitenScreens\_Vorlagen`
    Ebenfalls dort: **Wand-Layout** — Leinwand-Abstände und Höhenversatz je
-   Leinwand (positiv = hängt tiefer) in der Kirche ausmessen und eintragen;
-   beides fliesst ins geometrisch korrekte Spannen beim Upload (aktuell
-   Platzhalter 0).
+   Leinwand (positiv = hängt tiefer) fliessen ins geometrisch korrekte Spannen
+   beim Upload. Die Standardwerte sind aus der Kalibrierung grob abgeleitet
+   (Näherung); für exaktes Spannen in der Kirche nachmessen — besonders den
+   Mittelabstand über der Bühne (der lässt sich aus der Kalibrierung nicht
+   ableiten). Nach dem Ändern: Tab „Inhalte" → „Alle Span-Vorlagen neu rechnen".
 4. Beamer-IPs prüfen (Standard: links 192.168.100.95, rechts 192.168.100.96).
 5. **`/admin` → Tab „Anzeige"**: pro Beamer-Fenster das physische Display
    (HDMI/DisplayPort-Ausgang) wählen — „Fenster identifizieren" blendet 4 s
@@ -64,7 +67,9 @@ npm start
 6. Kalibrierung: kommt aus dem OBS-Import und lässt sich unter
    **`/admin` → Tab „Kalibrierung"** direkt nachjustieren (Ecken ziehen,
    Pfeiltasten = 1 px, Shift = 10 px, Alt = 0,1 px; Änderungen erscheinen
-   sofort auf den Leinwänden). Import vom alten OBS-Export:
+   sofort auf den Leinwänden). Für pixelgenaues Justieren pro Beamer-Fenster
+   ein Zoom-Regler (1×–8×, zentriert auf die gewählte Ecke) und x/y-Zahlenfelder
+   für die gewählte Ecke unter der Ansicht. Import vom alten OBS-Export:
    `npm run import-streamfx -- --obs <export.json> --config <pfad-zur-config>`
    (Config-Pfad steht in `/api/health` → `mediaRoot` daneben; Standard:
    `%APPDATA%\seitenscreens\config.json`)
@@ -97,6 +102,11 @@ oder den fertigen Link aus `/api/templates` kopieren.
 Die alten Beamer-ein/aus-Knöpfe (direkt auf `…/form/control_cgi`)
 funktionieren unverändert weiter.
 
+Knopf-Bild: `http://<PC-IP>:8080/api/button/{Name}` (bzw. mit Gruppe
+`…/api/button/{Gruppe}/{Name}`) liefert ein quadratisches Icon der Vorlage
+(Standard 144×144 JPEG; `?size=`, `?format=png`) — direkt als Knopf-Bild im
+Stream Deck verwendbar.
+
 Vorlagen in Gruppen (Unterordner in `_Vorlagen`, z.B. `Jugend/Scene 1`):
 `/api/template/{Name}/apply` funktioniert nur, solange der Name über alle
 Gruppen eindeutig ist (sonst Antwort 409 mit Kandidatenliste) — im Zweifel
@@ -119,11 +129,36 @@ Aufgabenplanung (`taskschd.msc`) → Einfache Aufgabe:
 - Windows-Energieoptionen: Bildschirm **nie** ausschalten, kein Standby;
   Windows-Update-Nutzungszeit über die Gottesdienstzeiten legen
 
-M6 bringt: Ein-Klick-Installer, sauberen Autostart, Preflight-Ampel
-(Sonntagmorgen-Check). Die Display-Zuordnung mit Identify/Tausch ist
-bereits da (`/admin` → Tab „Anzeige").
+Der Ein-Klick-Installer existiert bereits (Abschnitt 7 „Installer bauen") —
+mit eingebettetem ffmpeg, Desktop-/Startmenü-Verknüpfung und Icon. Offen aus
+M6 bleiben der Kiosk/Autostart-Feinschliff und die Preflight-Ampel
+(Sonntagmorgen-Check). Die Display-Zuordnung mit Identify/Tausch ist bereits
+da (`/admin` → Tab „Anzeige").
 
-## 7. Zurück zu OBS (Notfall-Rollback)
+## 7. Installer bauen (für Verteilung)
+
+Statt aus dem Quellcode zu starten, lässt sich ein Ein-Klick-Installer bauen
+(`electron-builder`, NSIS): `release\Seitenscreens Setup <version>.exe` mit
+Desktop-/Startmenü-Verknüpfung und Icon; ffmpeg/ffprobe sind eingebettet
+(keine PATH-Installation mehr nötig). Der ffmpeg-Pfad wird zur Laufzeit
+aufgelöst: gebündelt im Installer, sonst `SEITENSCREENS_FFMPEG`/PATH.
+
+**Wichtig:** Der Build muss auf Windows bzw. in CI (windows-latest) laufen —
+Cross-Build vom Mac ist nicht zuverlässig.
+
+```bat
+npm install
+npm install --os=win32 --cpu=x64 sharp   REM Windows-Binaries für sharp
+npm run dist:win                          REM baut release\Seitenscreens Setup <version>.exe
+```
+
+`npm run dist:win` ruft vorher `vendor:ffmpeg` auf, das ffmpeg/ffprobe nach
+`vendor\` herunterlädt (gyan.dev, GPL-Build). `vendor\` und `release\` sind
+gitignored — ffmpeg wird beim Build frisch geladen und liegt nicht im Repo.
+
+Der bisherige „aus dem Quellcode starten"-Weg (Abschnitte 2–3) bleibt gültig.
+
+## 8. Zurück zu OBS (Notfall-Rollback)
 
 Das alte Setup bleibt installiert. Falls nötig:
 1. Seitenscreens-Aufgabe in der Aufgabenplanung deaktivieren, App beenden
@@ -131,7 +166,7 @@ Das alte Setup bleibt installiert. Falls nötig:
 3. Rechtsklick auf Szene → Vollbild-Projektor auf die beiden Beamer
 4. Alte GUI/Stream-Deck-Profile funktionieren wie bisher
 
-## 8. Fehlersuche
+## 9. Fehlersuche
 
 | Symptom | Prüfen |
 |---|---|

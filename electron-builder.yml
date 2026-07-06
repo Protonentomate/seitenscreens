@@ -1,0 +1,51 @@
+# electron-builder-Konfiguration — baut einen Windows-Installer (NSIS).
+# Voraussetzungen des Builds (siehe docs/INSTALLATION-WINDOWS.md, Abschnitt Packaging):
+#   1. npm run vendor:ffmpeg   → lädt ffmpeg.exe/ffprobe.exe nach vendor/win/
+#   2. npm run build           → electron-vite build erzeugt out/{main,preload,renderer}
+#   3. npx electron-builder --win --x64
+# Der finale Build muss auf Windows (oder CI windows-latest) laufen; sharp braucht
+# dort die win32-x64-Binaries (npm install --os=win32 --cpu=x64 sharp).
+appId: ch.seitenscreens.app
+productName: Seitenscreens
+copyright: Seitenscreens
+
+directories:
+  output: release
+  buildResources: build
+
+# Nur das gebaute Ergebnis + Manifest verpacken (kein Quellcode, kein dev/)
+files:
+  - out/**
+  - package.json
+
+# ffmpeg/ffprobe unangetastet neben die App legen → resources/ffmpeg/*.exe.
+# src/main/ffmpeg.ts findet sie im gepackten Zustand über process.resourcesPath.
+extraResources:
+  - from: vendor/win
+    to: ffmpeg
+    filter:
+      - ffmpeg.exe
+      - ffprobe.exe
+
+asar: true
+# sharp ist ein natives Modul (inkl. libvips-DLL) — aus dem asar auspacken,
+# sonst kann es zur Laufzeit nicht geladen werden.
+asarUnpack:
+  - '**/node_modules/sharp/**'
+  - '**/node_modules/@img/**'
+npmRebuild: false
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Seitenscreens

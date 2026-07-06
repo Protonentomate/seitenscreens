@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
 import fastifyStatic from '@fastify/static'
 import fastifyCors from '@fastify/cors'
@@ -8,25 +8,23 @@ import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import sharp from 'sharp'
 import { pipeline } from 'node:stream/promises'
 import type { Store } from './store'
 import { kindForFile } from './store'
 import type { MediaIndex } from './mediaIndex'
 import type { ProjectorManager } from './projectors'
-import type { IngestQueue } from './ingest'
+import type { IngestQueue, IngestSource } from './ingest'
 import { resolveMediaFile, openFileStream, isServableMedia } from './media'
 import { isScreenName, SCREEN_NAMES, WINDOW_ROLES, type ScreenName, type WindowRole } from '../shared/screens'
 import type { AppConfig, MediaFileInfo, IngestFit, IngestMode, Quad, SpanGaps } from '../shared/types'
 import { mergeWithDefaults } from './config'
+import { ffmpegBinary, ffprobeBinary } from './ffmpeg'
 
 /** Fenster-Aktionen, die main/index bereitstellt (Identify, Vollbild erzwingen). */
 export interface WindowControl {
   identify(): void
   refullscreen(): void
-}
-
-function ffmpegBinary(): string {
-  return process.env.SEITENSCREENS_FFMPEG || 'ffmpeg'
 }
 
 function toolAvailable(binary: string): Promise<boolean> {
@@ -53,14 +51,15 @@ export async function startApi(
   // die Aktion ausgeführt wurde.
   await app.register(fastifyCors, { origin: true })
   await app.register(fastifyWebsocket)
-  await app.register(fastifyMultipart, { limits: { fileSize: 2 * 1024 * 1024 * 1024, files: 1 } })
+  // files: 4 — Modus "quad" schickt bis zu 4 Dateien (je eine pro Leinwand)
+  await app.register(fastifyMultipart, { limits: { fileSize: 2 * 1024 * 1024 * 1024, files: 4 } })
 
   const ok = (extra: Record<string, unknown> = {}) => ({ ok: true, ...extra, state: store.snapshot() })
 
   // Werkzeug-Verfügbarkeit einmal beim Start prüfen (Preflight/Health)
   const tools = {
     ffmpeg: await toolAvailable(ffmpegBinary()),
-    ffprobe: await toolAvailable(process.env.SEITENSCREENS_FFPROBE || 'ffprobe'),
+    ffprobe: await toolAvailable(ffprobeBinary()),
   }
 
   // --- Zustand & Gesundheit ---
@@ -495,60 +494,160 @@ export async function startApi(
 
   // --- Upload & Verarbeitung (Admin) ---
 
+  const FIELD_TO_SCREEN: Record<string, ScreenName> = {
+    fileLinksLinks: 'LinksLinks',
+    fileLinksRechts: 'LinksRechts',
+    fileRechtsLinks: 'RechtsLinks',
+    fileRechtsRechts: 'RechtsRechts',
+  }
+  const safeUploadName = (name: string | undefined) =>
+    path.basename(name || 'upload').replace(/[^\w.\-äöüÄÖÜéèà ]/g, '_')
+  const isFit = (v: string): v is IngestFit => ['contain', 'cover', 'stretch'].includes(v)
+
   app.post('/api/upload', async (req, reply) => {
-    const data = await req.file()
-    if (!data) {
-      return reply.status(400).send({ ok: false, error: 'Keine Datei im Upload' })
-    }
-    const fields = data.fields as Record<string, { value?: unknown } | undefined>
-    const fieldValue = (name: string): string => String(fields[name]?.value ?? '').trim()
+    // req.parts() statt req.file(): erlaubt bis zu 4 Dateien (Modus quad) +
+    // Felder in einem Request. Dateien werden im Stream ins Work-Dir geschrieben.
+    const fields: Record<string, string> = {}
+    const cleanup: string[] = []
+    let mainFile: { uploadPath: string; originalName: string } | null = null
+    const quadFiles = new Map<ScreenName, { uploadPath: string; originalName: string }>()
+    let truncated = false
 
-    const templateName = fieldValue('templateName')
-    const group = fieldValue('group')
-    const mode = fieldValue('mode') as IngestMode
-    const fit = (fieldValue('fit') || 'contain') as IngestFit
-    const gaps = (fieldValue('gaps') || 'exact') as SpanGaps
-    const mirror = fieldValue('mirror') === '1' || fieldValue('mirror') === 'true'
-    const target = fieldValue('target')
-
-    if (!['single', 'clone', 'span', 'span2'].includes(mode)) {
-      return reply.status(400).send({ ok: false, error: 'mode muss single|clone|span|span2 sein' })
-    }
-    if (!['contain', 'cover', 'stretch'].includes(fit)) {
-      return reply.status(400).send({ ok: false, error: 'fit muss contain|cover|stretch sein' })
-    }
-    if (!['exact', 'none'].includes(gaps)) {
-      return reply.status(400).send({ ok: false, error: 'gaps muss exact|none sein' })
-    }
-    if (mode === 'single' && !isScreenName(target)) {
-      return reply.status(400).send({ ok: false, error: 'target muss eine Leinwand sein' })
-    }
-
-    // Upload zuerst vollständig ins Work-Dir streamen
-    const safeName = path.basename(data.filename || 'upload').replace(/[^\w.\-äöüÄÖÜéèà ]/g, '_')
-    const uploadPath = path.join(ingest.workDir(), `upload-${Date.now()}-${safeName}`)
-    await pipeline(data.file, fs.createWriteStream(uploadPath))
-    if (data.file.truncated) {
-      fs.rmSync(uploadPath, { force: true })
-      return reply.status(413).send({ ok: false, error: 'Datei zu gross (max. 2 GB)' })
+    try {
+      for await (const part of req.parts()) {
+        if (part.type === 'file') {
+          const screen = FIELD_TO_SCREEN[part.fieldname]
+          if (part.fieldname !== 'file' && !screen) {
+            await part.toBuffer() // unbekanntes File drainen, sonst blockiert der Stream
+            continue
+          }
+          const safe = safeUploadName(part.filename)
+          const up = path.join(ingest.workDir(), `upload-${Date.now()}-${screen ?? 'main'}-${safe}`)
+          await pipeline(part.file, fs.createWriteStream(up))
+          cleanup.push(up)
+          if (part.file.truncated) truncated = true
+          if (screen) quadFiles.set(screen, { uploadPath: up, originalName: safe })
+          else mainFile = { uploadPath: up, originalName: safe }
+        } else {
+          fields[part.fieldname] = String((part as { value?: unknown }).value ?? '').trim()
+        }
+      }
+    } catch (err) {
+      for (const p of cleanup) fs.rmSync(p, { force: true })
+      return reply.status(400).send({ ok: false, error: `Upload fehlgeschlagen: ${String(err)}` })
     }
 
-    const result = ingest.enqueue({
-      uploadPath,
-      originalName: safeName,
-      group,
-      templateName,
-      mode,
-      target: mode === 'single' ? (target as ScreenName) : undefined,
-      fit,
-      gaps,
-      mirror,
-    })
-    if (!result.ok) {
-      fs.rmSync(uploadPath, { force: true })
-      return reply.status(400).send({ ok: false, error: result.error })
+    const fail = (status: number, error: string) => {
+      for (const p of cleanup) fs.rmSync(p, { force: true })
+      return reply.status(status).send({ ok: false, error })
     }
+    if (truncated) return fail(413, 'Datei zu gross (max. 2 GB)')
+
+    const mode = (fields.mode ?? '') as IngestMode
+    const fit = (fields.fit || 'contain') as IngestFit
+    const gaps = (fields.gaps || 'exact') as SpanGaps
+    const mirror = fields.mirror === '1' || fields.mirror === 'true'
+    const loopSmooth = fields.loopSmooth === '1' || fields.loopSmooth === 'true'
+    let loopCrossfadeS = Number(fields.loopCrossfadeS)
+    if (!Number.isFinite(loopCrossfadeS)) loopCrossfadeS = 0.5
+    loopCrossfadeS = Math.min(2, Math.max(0.1, loopCrossfadeS))
+    const group = fields.group ?? ''
+    const templateName = fields.templateName ?? ''
+    const target = fields.target ?? ''
+
+    if (!['single', 'clone', 'span', 'span2', 'quad'].includes(mode)) {
+      return fail(400, 'mode muss single|clone|span|span2|quad sein')
+    }
+    if (!isFit(fit)) return fail(400, 'fit muss contain|cover|stretch sein')
+    if (!['exact', 'none'].includes(gaps)) return fail(400, 'gaps muss exact|none sein')
+
+    let result: { ok: boolean; jobId?: string; error?: string }
+    if (mode === 'quad') {
+      if (quadFiles.size === 0) return fail(400, 'Mindestens eine Datei je Leinwand angeben')
+      const sources: Partial<Record<ScreenName, IngestSource>> = {}
+      for (const [screen, f] of quadFiles) {
+        const perFit = fields['fit' + screen] || fit
+        sources[screen] = { uploadPath: f.uploadPath, originalName: f.originalName, fit: isFit(perFit) ? perFit : 'contain' }
+      }
+      result = ingest.enqueue({
+        uploadPath: '',
+        originalName: '',
+        group,
+        templateName,
+        mode: 'quad',
+        fit,
+        gaps,
+        mirror,
+        loopSmooth,
+        loopCrossfadeS,
+        sources,
+      })
+    } else {
+      if (!mainFile) return fail(400, 'Keine Datei im Upload')
+      if (mode === 'single' && !isScreenName(target)) return fail(400, 'target muss eine Leinwand sein')
+      result = ingest.enqueue({
+        uploadPath: mainFile.uploadPath,
+        originalName: mainFile.originalName,
+        group,
+        templateName,
+        mode,
+        target: mode === 'single' ? (target as ScreenName) : undefined,
+        fit,
+        gaps,
+        mirror,
+        loopSmooth,
+        loopCrossfadeS,
+      })
+    }
+    if (!result.ok) return fail(400, result.error ?? 'Fehler')
     return ok({ jobId: result.jobId })
+  })
+
+  // --- Re-Render aus _original (z.B. nach geänderten Wandmassen) ---
+
+  const rerenderRef = async (ref: string): Promise<{ status: number; body: Record<string, unknown> }> => {
+    const resolved = index.resolveTemplate(ref)
+    if (resolved.ambiguous) {
+      return { status: 409, body: { ok: false, error: `Mehrdeutig — Gruppe angeben: ${resolved.ambiguous.join(', ')}` } }
+    }
+    if (!resolved.template) {
+      return { status: 404, body: { ok: false, error: `Vorlage nicht gefunden: ${ref}` } }
+    }
+    const r = await ingest.rerenderTemplate(resolved.template)
+    return r.ok
+      ? { status: 200, body: ok({ jobId: r.jobId, rerendered: resolved.template.ref }) }
+      : { status: 409, body: { ok: false, error: r.error } }
+  }
+
+  app.route({
+    method: ['GET', 'POST'],
+    url: '/api/template/:name/rerender',
+    handler: async (req, reply) => {
+      const { name } = req.params as { name: string }
+      const r = await rerenderRef(name)
+      return reply.status(r.status).send(r.body)
+    },
+  })
+
+  app.route({
+    method: ['GET', 'POST'],
+    url: '/api/template/:group/:name/rerender',
+    handler: async (req, reply) => {
+      const { group, name } = req.params as { group: string; name: string }
+      const r = await rerenderRef(`${group}/${name}`)
+      return reply.status(r.status).send(r.body)
+    },
+  })
+
+  app.route({
+    method: ['GET', 'POST'],
+    url: '/api/rerender-all',
+    handler: async (req) => {
+      const raw = (req.query as Record<string, string>).modes ?? 'span,span2'
+      const modes = raw.split(',').filter((m): m is IngestMode => ['single', 'clone', 'span', 'span2', 'quad'].includes(m))
+      const res = await ingest.rerenderByModes(modes.length ? modes : ['span', 'span2'])
+      return ok(res)
+    },
   })
 
   // --- Einstellungen (Medienordner, Übergang, Beamer-IPs) ---
@@ -706,70 +805,164 @@ export async function startApi(
   /** Poster-Frame für Videos, gecacht in userData/thumbs (Bilder skaliert der Browser selbst). */
   const thumbsInFlight = new Map<string, Promise<boolean>>()
   const thumbsDir = path.join(electronApp.getPath('userData'), 'thumbs')
+  const versionKey = (rel: string, stat: fs.Stats): string =>
+    crypto.createHash('sha1').update(`${rel}|${Math.round(stat.mtimeMs)}|${stat.size}`).digest('hex').slice(0, 20)
+
+  /**
+   * Poster-JPEG eines Videos erzeugen/cachen (in-flight-dedupe, ein ffmpeg-Lauf
+   * pro Datei-Version). Geteilt zwischen /thumbs (Control-UI) und /api/button
+   * (Stream-Deck-Icon), damit dasselbe Video nur einmal dekodiert wird.
+   */
+  const ensureVideoPoster = async (rel: string, abs: string, key: string): Promise<string | null> => {
+    const thumbPath = path.join(thumbsDir, `${key}.jpg`)
+    if (fs.existsSync(thumbPath)) return thumbPath
+    let job = thumbsInFlight.get(key)
+    if (!job) {
+      job = new Promise<boolean>((resolve) => {
+        fs.mkdirSync(thumbsDir, { recursive: true })
+        const tmp = path.join(thumbsDir, `.${key}-${process.pid}.tmp.jpg`)
+        execFile(
+          ffmpegBinary(),
+          ['-y', '-ss', '1', '-i', abs, '-frames:v', '1', '-vf', 'scale=270:-2', '-q:v', '5', tmp],
+          { timeout: 20000 },
+          (err) => {
+            if (err || !fs.existsSync(tmp)) {
+              fs.rmSync(tmp, { force: true })
+              resolve(false)
+              return
+            }
+            try {
+              fs.renameSync(tmp, thumbPath)
+              resolve(true)
+            } catch {
+              fs.rmSync(tmp, { force: true })
+              resolve(fs.existsSync(thumbPath))
+            }
+          },
+        )
+      }).finally(() => {
+        thumbsInFlight.delete(key)
+        void pruneDir(thumbsDir, 300)
+      })
+      thumbsInFlight.set(key, job)
+    }
+    return (await job) ? thumbPath : null
+  }
 
   app.get('/thumbs/*', async (req, reply) => {
     const rel = (req.params as Record<string, string>)['*'] ?? ''
     const abs = resolveMediaFile(store.getConfig().mediaRoot, rel)
     if (!abs) return reply.status(404).send({ ok: false, error: 'Nicht gefunden' })
-
-    const stat = fs.statSync(abs)
-    const key = crypto.createHash('sha1').update(`${rel}|${Math.round(stat.mtimeMs)}|${stat.size}`).digest('hex').slice(0, 20)
-    const thumbPath = path.join(thumbsDir, `${key}.jpg`)
-
-    if (!fs.existsSync(thumbPath)) {
-      // Parallele Anfragen fürs gleiche Video teilen sich EINEN ffmpeg-Lauf
-      let job = thumbsInFlight.get(key)
-      if (!job) {
-        job = new Promise<boolean>((resolve) => {
-          fs.mkdirSync(thumbsDir, { recursive: true })
-          const tmp = path.join(thumbsDir, `.${key}-${process.pid}.tmp.jpg`)
-          execFile(
-            ffmpegBinary(),
-            ['-y', '-ss', '1', '-i', abs, '-frames:v', '1', '-vf', 'scale=270:-2', '-q:v', '5', tmp],
-            { timeout: 20000 },
-            (err) => {
-              if (err || !fs.existsSync(tmp)) {
-                fs.rmSync(tmp, { force: true })
-                resolve(false)
-                return
-              }
-              try {
-                fs.renameSync(tmp, thumbPath)
-                resolve(true)
-              } catch {
-                fs.rmSync(tmp, { force: true })
-                resolve(fs.existsSync(thumbPath))
-              }
-            },
-          )
-        }).finally(() => {
-          thumbsInFlight.delete(key)
-          void pruneThumbs()
-        })
-        thumbsInFlight.set(key, job)
-      }
-      const okThumb = await job
-      if (!okThumb) return reply.status(404).send({ ok: false, error: 'Kein Thumbnail möglich' })
-    }
+    const thumbPath = await ensureVideoPoster(rel, abs, versionKey(rel, fs.statSync(abs)))
+    if (!thumbPath) return reply.status(404).send({ ok: false, error: 'Kein Thumbnail möglich' })
     reply.header('Content-Type', 'image/jpeg')
     reply.header('X-Content-Type-Options', 'nosniff')
     reply.header('Cache-Control', 'max-age=86400')
     return reply.send(fs.createReadStream(thumbPath))
   })
 
-  async function pruneThumbs(): Promise<void> {
+  // --- Quadratische Button-Icons fürs Stream Deck ---
+
+  const buttonsDir = path.join(electronApp.getPath('userData'), 'buttons')
+  const buttonsInFlight = new Map<string, Promise<boolean>>()
+
+  const buttonHandler = async (ref: string, req: FastifyRequest, reply: FastifyReply) => {
+    const resolved = index.resolveTemplate(ref)
+    if (resolved.ambiguous) {
+      return reply.status(409).send({ ok: false, error: `Mehrdeutig — Gruppe angeben: ${resolved.ambiguous.join(', ')}` })
+    }
+    const template = resolved.template
+    if (!template) return reply.status(404).send({ ok: false, error: `Vorlage nicht gefunden: ${ref}` })
+
+    // Erste vorhandene Leinwand in fester Reihenfolge als Motiv
+    let picked: MediaFileInfo | undefined
+    for (const screen of SCREEN_NAMES) {
+      const f = template.files[screen]
+      if (f) {
+        picked = f
+        break
+      }
+    }
+    if (!picked) return reply.status(404).send({ ok: false, error: 'Vorlage hat keine Leinwand-Datei' })
+    const abs = resolveMediaFile(store.getConfig().mediaRoot, picked.file)
+    if (!abs) return reply.status(404).send({ ok: false, error: 'Datei nicht gefunden' })
+
+    const q = (req.query ?? {}) as Record<string, string>
+    let size = Number(q.size)
+    if (!Number.isFinite(size)) size = 144
+    size = Math.min(512, Math.max(16, Math.round(size)))
+    const png = q.format === 'png'
+
+    // Quelle: Bild direkt, Video über den geteilten Poster-Mechanismus
+    const stat = fs.statSync(abs)
+    let sourcePath = abs
+    if (picked.kind === 'video') {
+      const poster = await ensureVideoPoster(picked.file, abs, versionKey(picked.file, stat))
+      if (!poster) return reply.status(404).send({ ok: false, error: 'Kein Thumbnail möglich' })
+      sourcePath = poster
+    }
+
+    const key = crypto
+      .createHash('sha1')
+      .update(`${picked.file}|${Math.round(stat.mtimeMs)}|${stat.size}|${size}|${png ? 'png' : 'jpg'}`)
+      .digest('hex')
+      .slice(0, 20)
+    const outPath = path.join(buttonsDir, `${key}.${png ? 'png' : 'jpg'}`)
+
+    if (!fs.existsSync(outPath)) {
+      let job = buttonsInFlight.get(key)
+      if (!job) {
+        job = (async () => {
+          fs.mkdirSync(buttonsDir, { recursive: true })
+          const tmp = path.join(buttonsDir, `.${key}-${process.pid}.tmp`)
+          let img = sharp(sourcePath, { failOn: 'error' })
+            .rotate()
+            .resize(size, size, { fit: 'cover', position: 'centre' })
+          img = png ? img.png() : img.jpeg({ quality: 82, mozjpeg: true })
+          await img.toFile(tmp)
+          try {
+            fs.renameSync(tmp, outPath)
+            return true
+          } catch {
+            fs.rmSync(tmp, { force: true })
+            return fs.existsSync(outPath)
+          }
+        })()
+          .catch(() => false)
+          .finally(() => {
+            buttonsInFlight.delete(key)
+            void pruneDir(buttonsDir, 300)
+          })
+        buttonsInFlight.set(key, job)
+      }
+      if (!(await job)) return reply.status(500).send({ ok: false, error: 'Icon-Erzeugung fehlgeschlagen' })
+    }
+    reply.header('Content-Type', png ? 'image/png' : 'image/jpeg')
+    reply.header('X-Content-Type-Options', 'nosniff')
+    reply.header('Cache-Control', 'max-age=86400')
+    return reply.send(fs.createReadStream(outPath))
+  }
+
+  app.get('/api/button/:name', (req, reply) => buttonHandler((req.params as { name: string }).name, req, reply))
+  app.get('/api/button/:group/:name', (req, reply) => {
+    const { group, name } = req.params as { group: string; name: string }
+    return buttonHandler(`${group}/${name}`, req, reply)
+  })
+
+  /** Cache-Ordner auf maxFiles begrenzen (LRU nach mtime). */
+  async function pruneDir(dir: string, maxFiles: number): Promise<void> {
     try {
-      const entries = await fs.promises.readdir(thumbsDir)
-      if (entries.length <= 300) return
+      const entries = await fs.promises.readdir(dir)
+      if (entries.length <= maxFiles) return
       const stats = await Promise.all(
         entries.map(async (name) => {
-          const p = path.join(thumbsDir, name)
+          const p = path.join(dir, name)
           const st = await fs.promises.stat(p).catch(() => null)
           return st ? { p, mtimeMs: st.mtimeMs } : null
         }),
       )
       const sorted = stats.filter((s): s is NonNullable<typeof s> => s !== null).sort((a, b) => a.mtimeMs - b.mtimeMs)
-      for (const s of sorted.slice(0, sorted.length - 300)) {
+      for (const s of sorted.slice(0, sorted.length - maxFiles)) {
         await fs.promises.unlink(s.p).catch(() => {})
       }
     } catch {

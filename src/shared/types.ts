@@ -94,7 +94,8 @@ export interface AppConfig {
  * span2 = Motiv über die beiden LINKEN gespannt und identisch über die
  * beiden RECHTEN (passt für Querformat-Motive deutlich besser als span)
  */
-export type IngestMode = 'single' | 'clone' | 'span' | 'span2'
+/** quad = bis zu 4 eigene Dateien, je eine pro Leinwand. */
+export type IngestMode = 'single' | 'clone' | 'span' | 'span2' | 'quad'
 export type IngestFit = 'contain' | 'cover' | 'stretch'
 
 export type IngestStatus = 'queued' | 'running' | 'done' | 'error'

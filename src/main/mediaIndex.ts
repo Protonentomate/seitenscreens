@@ -7,6 +7,7 @@ import chokidar, { type FSWatcher } from 'chokidar'
 import type { MediaFileInfo, MediaIndexSnapshot, ProbeInfo, TemplateInfo } from '../shared/types'
 import { SCREEN_NAMES, type ScreenName } from '../shared/screens'
 import { kindForFile } from './store'
+import { ffprobeBinary } from './ffmpeg'
 
 /** Reihenfolge = Priorität: Video schlägt Bild. */
 const EXTENSION_PRIORITY = ['.mp4', '.webm', '.png', '.jpg', '.jpeg', '.webp']
@@ -50,10 +51,6 @@ function classify(raw: {
     }
   }
   return { ...raw, playable, warnings }
-}
-
-function ffprobeBinary(): string {
-  return process.env.SEITENSCREENS_FFPROBE || 'ffprobe'
 }
 
 interface FfprobeStream {

@@ -7,9 +7,10 @@ import path from 'node:path'
 import sharp from 'sharp'
 import type { Store } from './store'
 import { IGNORED_DIR_PATTERN, type MediaIndex } from './mediaIndex'
-import type { IngestFit, IngestJob, IngestMode, SpanGaps } from '../shared/types'
+import type { IngestFit, IngestJob, IngestMode, SpanGaps, TemplateInfo } from '../shared/types'
 import { spanCrops, span2Pairs } from '../shared/span'
 import { SCREEN_NAMES, type ScreenName } from '../shared/screens'
+import { ffmpegBinary, ffprobeBinary } from './ffmpeg'
 
 /**
  * Ingest-Pipeline: Upload → Normalisieren → atomar in den Nextcloud-Ordner.
@@ -55,11 +56,11 @@ function encoderArgs(threads: number): string[] {
   ]
 }
 
-function ffmpegBinary(): string {
-  return process.env.SEITENSCREENS_FFMPEG || 'ffmpeg'
-}
-function ffprobeBinary(): string {
-  return process.env.SEITENSCREENS_FFPROBE || 'ffprobe'
+/** Eine Quelle im Modus 'quad' (je eine Datei pro Leinwand). */
+export interface IngestSource {
+  uploadPath: string
+  originalName: string
+  fit: IngestFit
 }
 
 export interface IngestParams {
@@ -76,6 +77,31 @@ export interface IngestParams {
   gaps: SpanGaps
   /** Nur bei span2: die rechte Seite horizontal spiegeln (symmetrische Bewegung). */
   mirror: boolean
+  /** Nur bei Videos: Ende weich in den Anfang überblenden (nahtloser Loop). */
+  loopSmooth: boolean
+  /** Crossfade-Länge der Loop-Glättung in Sekunden. */
+  loopCrossfadeS: number
+  /** Nur bei mode 'quad': je Leinwand eine eigene Quelle. */
+  sources?: Partial<Record<ScreenName, IngestSource>>
+}
+
+/** _meta.json einer verarbeiteten Vorlage (Commit-Marker + Grundlage fürs Re-Render). */
+export interface TemplateMeta {
+  version: number
+  mode: IngestMode
+  fit?: IngestFit
+  gaps?: SpanGaps
+  mirror?: boolean
+  loopSmooth?: boolean
+  loopCrossfadeS?: number
+  targets: ScreenName[]
+  /** Nicht-quad: Original liegt unter _original/<source>. */
+  source?: string
+  /** quad: je Leinwand Original-Datei (in _original) + Einpassung + Typ. */
+  sources?: Partial<Record<ScreenName, { file: string; fit: IngestFit; kind: 'image' | 'video' }>>
+  layout?: unknown
+  createdAt: string
+  tool: string
 }
 
 /** Skalierungs-Filter für ffmpeg je Einpass-Modus. */
@@ -202,14 +228,32 @@ export class IngestQueue {
         }
       }
     }
-    const ext = path.extname(params.originalName).toLowerCase()
-    if (!VIDEO_EXTENSIONS.has(ext) && !IMAGE_EXTENSIONS.has(ext)) {
-      return { ok: false, error: `Nicht unterstütztes Format: ${ext}` }
+    const supported = (fileName: string) => {
+      const e = path.extname(fileName).toLowerCase()
+      return VIDEO_EXTENSIONS.has(e) || IMAGE_EXTENSIONS.has(e)
     }
-    if (params.mode === 'single' && !params.target) {
-      return { ok: false, error: 'Modus "single" braucht eine Ziel-Leinwand' }
+
+    if (params.mode === 'quad') {
+      const entries = Object.values(params.sources ?? {}) as IngestSource[]
+      if (entries.length === 0) {
+        return { ok: false, error: 'Modus "4 Dateien" braucht mindestens eine Datei' }
+      }
+      for (const src of entries) {
+        if (!supported(src.originalName)) {
+          return { ok: false, error: `Nicht unterstütztes Format: ${path.extname(src.originalName)}` }
+        }
+      }
+    } else {
+      if (!supported(params.originalName)) {
+        return { ok: false, error: `Nicht unterstütztes Format: ${path.extname(params.originalName)}` }
+      }
+      if (params.mode === 'single' && !params.target) {
+        return { ok: false, error: 'Modus "single" braucht eine Ziel-Leinwand' }
+      }
     }
+
     const id = crypto.randomBytes(6).toString('hex')
+    const quadCount = params.mode === 'quad' ? Object.keys(params.sources ?? {}).length : 0
     const modeLabel =
       params.mode === 'single'
         ? `→ ${params.target}`
@@ -217,11 +261,14 @@ export class IngestQueue {
           ? 'alle gleich'
           : params.mode === 'span2'
             ? 'je über 2'
-            : 'über alle 4'
+            : params.mode === 'quad'
+              ? `${quadCount} Dateien`
+              : 'über alle 4'
+    const sourceLabel = params.mode === 'quad' ? `${quadCount} Datei(en)` : params.originalName
     const ref = group ? `${group}/${name}` : name
     this.jobs.push({
       id,
-      label: `${ref} ← ${params.originalName} (${modeLabel})`,
+      label: `${ref} ← ${sourceLabel} (${modeLabel})`,
       status: 'queued',
       progress: 0,
       createdAt: Date.now(),
@@ -266,7 +313,13 @@ export class IngestQueue {
       this.update(next.id, { status: 'error', error: err instanceof Error ? err.message : String(err) })
     } finally {
       const params = this.params.get(next.id)
-      if (params) fs.rmSync(params.uploadPath, { force: true })
+      if (params) {
+        if (params.uploadPath) fs.rmSync(params.uploadPath, { force: true })
+        // quad: jede Leinwand-Quelle aufräumen
+        for (const src of Object.values(params.sources ?? {})) {
+          if (src?.uploadPath) fs.rmSync(src.uploadPath, { force: true })
+        }
+      }
       this.params.delete(next.id)
       this.working = false
       void this.pump()
@@ -302,25 +355,105 @@ export class IngestQueue {
     if (!mediaRoot || !fs.existsSync(mediaRoot)) {
       throw new Error('Medienordner nicht konfiguriert oder nicht vorhanden')
     }
-    const ext = path.extname(params.originalName).toLowerCase()
-    const isVideo = VIDEO_EXTENSIONS.has(ext)
     const jobDir = path.join(this.workDir(), jobId)
     fs.mkdirSync(jobDir, { recursive: true })
-
-    const targets: ScreenName[] = params.mode === 'single' ? [params.target!] : [...SCREEN_NAMES]
     const outputs = new Map<ScreenName, string>()
 
     try {
-      if (isVideo) {
-        await this.processVideo(jobId, params, jobDir, targets, outputs)
+      if (params.mode === 'quad') {
+        await this.processQuad(jobId, params, jobDir, outputs)
       } else {
-        await this.processImage(params, jobDir, targets, outputs)
-        this.update(jobId, { progress: 0.9 })
+        const targets: ScreenName[] = params.mode === 'single' ? [params.target!] : [...SCREEN_NAMES]
+        const ext = path.extname(params.originalName).toLowerCase()
+        if (VIDEO_EXTENSIONS.has(ext)) {
+          await this.processVideo(jobId, params, jobDir, targets, outputs)
+        } else {
+          await this.processImage(params, jobDir, targets, outputs)
+          this.update(jobId, { progress: 0.9 })
+        }
       }
-      await this.finalize(params, mediaRoot, targets, outputs, isVideo)
+      await this.finalize(params, mediaRoot, outputs)
     } finally {
       fs.rmSync(jobDir, { recursive: true, force: true })
     }
+  }
+
+  /**
+   * Modus 'quad': je Leinwand eine eigene Datei — jede wird wie ein
+   * single-Upload auf IHRE Leinwand normalisiert (Bild 1080×1920, Video
+   * 720×1280, eigene Einpassung). Encodes laufen seriell (HD630).
+   */
+  private async processQuad(
+    jobId: string,
+    params: IngestParams,
+    jobDir: string,
+    outputs: Map<ScreenName, string>,
+  ): Promise<void> {
+    const sources = params.sources ?? {}
+    const screens = (Object.keys(sources) as ScreenName[]).filter((s) => sources[s])
+    const live = this.videoIsLive()
+    let done = 0
+    for (const screen of screens) {
+      const src = sources[screen]!
+      const ext = path.extname(src.originalName).toLowerCase()
+      const base = done / screens.length
+      const span = 1 / screens.length
+      if (VIDEO_EXTENSIONS.has(ext)) {
+        let input = src.uploadPath
+        const durationS = await probeDuration(input)
+        if (params.loopSmooth) {
+          input = await this.smoothLoop(input, path.join(jobDir, `_loop_${screen}.mp4`), durationS, params.loopCrossfadeS, live)
+        }
+        const scale = scaleFilter(src.fit, VIDEO_TARGET_W, VIDEO_TARGET_H)
+        const out = path.join(jobDir, `${screen}.mp4`)
+        const encDur = params.loopSmooth ? Math.max(0.1, durationS - params.loopCrossfadeS) : durationS
+        await runFfmpeg(
+          ['-i', input, '-vf', `fps=30,${scale},setsar=1,format=yuv420p`, ...encoderArgs(live ? 1 : 0), out],
+          encDur,
+          (f) => this.update(jobId, { progress: Math.min(0.95, (base + f * span) * 0.95) }),
+        )
+        outputs.set(screen, out)
+      } else {
+        const out = path.join(jobDir, `${screen}.jpg`)
+        await sharp(src.uploadPath, { failOn: 'error' })
+          .rotate()
+          .resize(IMAGE_TARGET_W, IMAGE_TARGET_H, { fit: sharpFit(src.fit), background: { r: 0, g: 0, b: 0 } })
+          .flatten({ background: { r: 0, g: 0, b: 0 } })
+          .jpeg({ quality: 90, mozjpeg: true })
+          .toFile(out)
+        outputs.set(screen, out)
+      }
+      done++
+      this.update(jobId, { progress: Math.min(0.95, (done / screens.length) * 0.95) })
+    }
+  }
+
+  /**
+   * Loop-Glättung: aus einem Video der Dauer D wird D−C, wobei die letzten C
+   * Sekunden weich in den Anfang überblenden (blend genau auf der Loop-Naht).
+   * Sehr kurze Clips (kein Mittelstück übrig) werden unverändert gelassen.
+   */
+  private async smoothLoop(
+    inputPath: string,
+    outPath: string,
+    durationS: number,
+    crossfadeS: number,
+    live: boolean,
+  ): Promise<string> {
+    const C = crossfadeS
+    if (!(durationS > 0) || C <= 0 || durationS - 2 * C < 0.1) return inputPath
+    const target = durationS - C
+    const f = (n: number) => n.toFixed(3)
+    const fc = [
+      `[0:v]trim=0:${f(C)},setpts=PTS-STARTPTS[head]`,
+      `[0:v]trim=${f(target)}:${f(durationS)},setpts=PTS-STARTPTS[tail]`,
+      `[0:v]trim=${f(C)}:${f(target)},setpts=PTS-STARTPTS[mid]`,
+      // Naht: front = head*(T/C) + tail*(1−T/C) — startet als Ende, endet als Anfang
+      `[head][tail]blend=all_expr=A*(T/${f(C)})+B*(1-T/${f(C)})[front]`,
+      `[front][mid]concat=n=2:v=1:a=0,format=yuv420p[v]`,
+    ].join(';')
+    await runFfmpeg(['-i', inputPath, '-filter_complex', fc, '-map', '[v]', ...encoderArgs(live ? 2 : 0), outPath], durationS, () => {})
+    return outPath
   }
 
   private async processImage(
@@ -404,11 +537,23 @@ export class IngestQueue {
     outputs: Map<ScreenName, string>,
   ): Promise<void> {
     const durationS = await probeDuration(params.uploadPath)
-    const onProgress = (f: number) => this.update(jobId, { progress: Math.min(0.95, f * 0.95) })
     // Laufen gerade Videos live, pro Encoder nur 1–2 Threads: zusammen mit
     // der niedrigen Prozess-Priorität bleibt die Wiedergabe flüssig, das
     // Encoding dauert einfach länger
     const live = this.videoIsLive()
+
+    // Optionaler Loop-Glättungs-Vorlauf: erzeugt eine nahtlos loopende Quelle,
+    // auf die dann die unveränderte Skalier-/Zuschnitt-Pipeline angewendet wird.
+    let inputPath = params.uploadPath
+    let encDur = durationS
+    const preShare = params.loopSmooth ? 0.3 : 0
+    if (params.loopSmooth) {
+      inputPath = await this.smoothLoop(inputPath, path.join(jobDir, '_loop.mp4'), durationS, params.loopCrossfadeS, live)
+      if (inputPath !== params.uploadPath) encDur = Math.max(0.1, durationS - params.loopCrossfadeS)
+      this.update(jobId, { progress: preShare * 0.95 })
+    }
+    const onProgress = (fr: number) =>
+      this.update(jobId, { progress: Math.min(0.95, (preShare + fr * (1 - preShare)) * 0.95) })
 
     if (params.mode === 'span') {
       const layout = this.store.getConfig().layout
@@ -418,13 +563,13 @@ export class IngestQueue {
       crops.forEach((crop, i) => {
         parts.push(`[c${i}]crop=${VIDEO_TARGET_W}:${VIDEO_TARGET_H}:${crop.x}:${crop.y},format=yuv420p[o${i}]`)
       })
-      const args = ['-i', params.uploadPath, '-filter_complex', parts.join(';')]
+      const args = ['-i', inputPath, '-filter_complex', parts.join(';')]
       crops.forEach((crop, i) => {
         const out = path.join(jobDir, `${crop.screen}.mp4`)
         args.push('-map', `[o${i}]`, ...encoderArgs(live ? 1 : 0), out)
         outputs.set(crop.screen, out)
       })
-      await runFfmpeg(args, durationS, onProgress)
+      await runFfmpeg(args, encDur, onProgress)
       return
     }
 
@@ -450,13 +595,13 @@ export class IngestQueue {
           mapLabels.push({ label, screen: crop.screen })
         })
       })
-      const args = ['-i', params.uploadPath, '-filter_complex', parts.join(';')]
+      const args = ['-i', inputPath, '-filter_complex', parts.join(';')]
       for (const { label, screen } of mapLabels) {
         const out = path.join(jobDir, `${screen}.mp4`)
         args.push('-map', `[${label}]`, ...encoderArgs(live ? 1 : 0), out)
         outputs.set(screen, out)
       }
-      await runFfmpeg(args, durationS, onProgress)
+      await runFfmpeg(args, encDur, onProgress)
       return
     }
 
@@ -464,8 +609,8 @@ export class IngestQueue {
     const scale = scaleFilter(params.fit, VIDEO_TARGET_W, VIDEO_TARGET_H)
     const single = path.join(jobDir, 'out.mp4')
     await runFfmpeg(
-      ['-i', params.uploadPath, '-vf', `fps=30,${scale},setsar=1,format=yuv420p`, ...encoderArgs(live ? 2 : 0), single],
-      durationS,
+      ['-i', inputPath, '-vf', `fps=30,${scale},setsar=1,format=yuv420p`, ...encoderArgs(live ? 2 : 0), single],
+      encDur,
       onProgress,
     )
     for (const screen of targets) {
@@ -476,22 +621,17 @@ export class IngestQueue {
   }
 
   /** Fertige Dateien atomar in den Sync-Ordner einsetzen, _meta.json als Commit-Marker. */
-  private async finalize(
-    params: IngestParams,
-    mediaRoot: string,
-    targets: ScreenName[],
-    outputs: Map<ScreenName, string>,
-    isVideo: boolean,
-  ): Promise<void> {
+  private async finalize(params: IngestParams, mediaRoot: string, outputs: Map<ScreenName, string>): Promise<void> {
     const destDir = params.group
       ? path.join(mediaRoot, params.group, params.templateName)
       : path.join(mediaRoot, params.templateName)
     await fs.promises.mkdir(destDir, { recursive: true })
 
-    const newExt = isVideo ? '.mp4' : '.jpg'
-    for (const screen of targets) {
-      const src = outputs.get(screen)
-      if (!src) continue
+    const ALL_EXT = ['.mp4', '.webm', '.png', '.jpg', '.jpeg', '.webp']
+    // Endung je Leinwand aus der Ausgabedatei ableiten — im quad-Modus kann
+    // sie pro Leinwand verschieden sein (Bild vs. Video)
+    for (const [screen, src] of outputs) {
+      const newExt = path.extname(src).toLowerCase()
       const dest = path.join(destDir, `${screen}${newExt}`)
       const tmp = path.join(destDir, `.${screen}${newExt}.tmp-${process.pid}`)
       // copy+rename statt rename: Work-Dir und Sync-Ordner können auf
@@ -500,31 +640,151 @@ export class IngestQueue {
       await fs.promises.rename(tmp, dest)
       // Alte Dateien anderer Endungen für diese Leinwand entfernen — sonst
       // gewinnt z.B. ein altes mp4 per Priorität gegen das neue jpg
-      for (const oldExt of ['.mp4', '.webm', '.png', '.jpg', '.jpeg', '.webp']) {
+      for (const oldExt of ALL_EXT) {
         if (oldExt === newExt) continue
         await fs.promises.rm(path.join(destDir, `${screen}${oldExt}`), { force: true }).catch(() => {})
       }
     }
 
-    // Original aufheben (Backup + Grundlage für spätere Re-Renders)
+    // Original(e) aufheben (Backup + Grundlage für spätere Re-Renders)
     const originalDir = path.join(destDir, '_original')
     await fs.promises.mkdir(originalDir, { recursive: true })
-    await fs.promises.copyFile(params.uploadPath, path.join(originalDir, params.originalName)).catch(() => {})
 
-    const meta = {
+    const meta: TemplateMeta = {
       version: 1,
       mode: params.mode,
-      fit: params.fit,
-      gaps: params.mode === 'span' || params.mode === 'span2' ? params.gaps : undefined,
-      mirror: params.mode === 'span2' ? params.mirror : undefined,
-      targets,
-      source: params.originalName,
-      layout: params.mode === 'span' || params.mode === 'span2' ? this.store.getConfig().layout : undefined,
+      targets: [...outputs.keys()],
       createdAt: new Date().toISOString(),
       tool: 'seitenscreens-ingest',
     }
+
+    if (params.mode === 'quad') {
+      const sources = params.sources ?? {}
+      const metaSources: NonNullable<TemplateMeta['sources']> = {}
+      for (const screen of Object.keys(sources) as ScreenName[]) {
+        const src = sources[screen]
+        if (!src) continue
+        // Screen-Präfix entkoppelt gleichnamige Dateien mehrerer Leinwände
+        const stored = `${screen}__${src.originalName}`
+        await fs.promises.copyFile(src.uploadPath, path.join(originalDir, stored)).catch(() => {})
+        const kind = VIDEO_EXTENSIONS.has(path.extname(src.originalName).toLowerCase()) ? 'video' : 'image'
+        metaSources[screen] = { file: stored, fit: src.fit, kind }
+      }
+      meta.sources = metaSources
+    } else {
+      await fs.promises.copyFile(params.uploadPath, path.join(originalDir, params.originalName)).catch(() => {})
+      meta.source = params.originalName
+      meta.fit = params.fit
+      if (params.mode === 'span' || params.mode === 'span2') {
+        meta.gaps = params.gaps
+        meta.layout = this.store.getConfig().layout
+      }
+      if (params.mode === 'span2') meta.mirror = params.mirror
+      if (params.loopSmooth) {
+        meta.loopSmooth = true
+        meta.loopCrossfadeS = params.loopCrossfadeS
+      }
+    }
+
     const metaTmp = path.join(destDir, '._meta.json.tmp')
     await fs.promises.writeFile(metaTmp, JSON.stringify(meta, null, 2))
     await fs.promises.rename(metaTmp, path.join(destDir, '_meta.json'))
+  }
+
+  // --- Re-Render aus _original (nach geänderten Wandmassen etc.) ---
+
+  private destDirFor(group: string, name: string): string {
+    return group
+      ? path.join(this.store.getConfig().mediaRoot, group, name)
+      : path.join(this.store.getConfig().mediaRoot, name)
+  }
+
+  private readMeta(destDir: string): TemplateMeta | null {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(destDir, '_meta.json'), 'utf-8')) as TemplateMeta
+    } catch {
+      return null
+    }
+  }
+
+  /** Eine Vorlage aus ihrem _original + _meta.json neu rechnen (frisches Layout). */
+  async rerenderTemplate(template: TemplateInfo): Promise<{ ok: boolean; jobId?: string; error?: string }> {
+    const mediaRoot = this.store.getConfig().mediaRoot
+    if (!mediaRoot) return { ok: false, error: 'Medienordner nicht konfiguriert' }
+    const destDir = this.destDirFor(template.group, template.name)
+    const meta = this.readMeta(destDir)
+    if (!meta) {
+      return { ok: false, error: `Keine _meta.json — vor der Re-Render-Funktion erstellt, bitte neu hochladen: ${template.ref}` }
+    }
+    const originalDir = path.join(destDir, '_original')
+
+    // KRITISCH: das Original NICHT direkt enqueuen — pump() löscht die
+    // Upload-Datei am Ende. Deshalb in eine Wegwerf-Kopie im Work-Dir kopieren.
+    const workCopy = (rel: string): string => {
+      const abs = path.join(originalDir, rel)
+      if (!fs.existsSync(abs)) throw new Error(`Original fehlt: _original/${rel}`)
+      const dest = path.join(this.workDir(), `rerender-${crypto.randomBytes(6).toString('hex')}-${path.basename(rel)}`)
+      fs.copyFileSync(abs, dest)
+      return dest
+    }
+
+    try {
+      if (meta.mode === 'quad') {
+        const sources: Partial<Record<ScreenName, IngestSource>> = {}
+        for (const screen of Object.keys(meta.sources ?? {}) as ScreenName[]) {
+          const s = meta.sources![screen]!
+          sources[screen] = { uploadPath: workCopy(s.file), originalName: s.file.replace(/^[^_]*__/, ''), fit: s.fit }
+        }
+        if (Object.keys(sources).length === 0) return { ok: false, error: 'Keine Quellen im _meta' }
+        return this.enqueue({
+          uploadPath: '',
+          originalName: '',
+          group: template.group,
+          templateName: template.name,
+          mode: 'quad',
+          fit: 'contain',
+          gaps: 'exact',
+          mirror: false,
+          loopSmooth: false,
+          loopCrossfadeS: 0.5,
+          sources,
+        })
+      }
+      if (!meta.source) return { ok: false, error: `Kein Original im _meta: ${template.ref}` }
+      return this.enqueue({
+        uploadPath: workCopy(meta.source),
+        originalName: meta.source,
+        group: template.group,
+        templateName: template.name,
+        mode: meta.mode,
+        target: meta.mode === 'single' ? meta.targets[0] : undefined,
+        fit: meta.fit ?? 'contain',
+        gaps: meta.gaps ?? 'exact',
+        mirror: meta.mirror ?? false,
+        loopSmooth: meta.loopSmooth ?? false,
+        loopCrossfadeS: meta.loopCrossfadeS ?? 0.5,
+      })
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  /** Alle Vorlagen der gewünschten Modi neu rechnen (z.B. span,span2). */
+  async rerenderByModes(modes: IngestMode[]): Promise<{ queued: string[]; skipped: { ref: string; reason: string }[] }> {
+    const queued: string[] = []
+    const skipped: { ref: string; reason: string }[] = []
+    const templates = this.index?.getSnapshot().templates ?? []
+    for (const t of templates) {
+      const meta = this.readMeta(this.destDirFor(t.group, t.name))
+      if (!meta) {
+        skipped.push({ ref: t.ref, reason: 'keine _meta.json' })
+        continue
+      }
+      if (!modes.includes(meta.mode)) continue
+      const r = await this.rerenderTemplate(t)
+      if (r.ok) queued.push(t.ref)
+      else skipped.push({ ref: t.ref, reason: r.error ?? 'Fehler' })
+    }
+    return { queued, skipped }
   }
 }

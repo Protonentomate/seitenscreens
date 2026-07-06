@@ -2,5 +2,7 @@ node_modules/
 out/
 dist/
 dev/
+release/
+vendor/
 *.log
 .DS_Store
