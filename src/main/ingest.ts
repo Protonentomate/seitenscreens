@@ -406,7 +406,8 @@ export class IngestQueue {
         }
         const scale = scaleFilter(src.fit, VIDEO_TARGET_W, VIDEO_TARGET_H)
         const out = path.join(jobDir, `${screen}.mp4`)
-        const encDur = params.loopSmooth ? Math.max(0.1, durationS - params.loopCrossfadeS) : durationS
+        // nur kürzer, wenn smoothLoop wirklich neu encodiert hat (sonst volle Dauer)
+        const encDur = input !== src.uploadPath ? Math.max(0.1, durationS - params.loopCrossfadeS) : durationS
         await runFfmpeg(
           ['-i', input, '-vf', `fps=30,${scale},setsar=1,format=yuv420p`, ...encoderArgs(live ? 1 : 0), out],
           encDur,
@@ -660,17 +661,36 @@ export class IngestQueue {
 
     if (params.mode === 'quad') {
       const sources = params.sources ?? {}
-      const metaSources: NonNullable<TemplateMeta['sources']> = {}
-      for (const screen of Object.keys(sources) as ScreenName[]) {
-        const src = sources[screen]
-        if (!src) continue
+      const uploaded = new Set(Object.keys(sources) as ScreenName[])
+      // Bestehende quad-Vorlage → Merge (nicht hochgeladene Leinwände bleiben,
+      // damit man einzelne Leinwände korrigieren kann und Meta==Platte bleibt).
+      // Vorher KEIN quad (neu oder Modus-Wechsel) → hochgeladene Leinwände sind
+      // massgeblich: alte Dateien nicht hochgeladener Leinwände entfernen.
+      const existing = this.readMeta(destDir)
+      const prevQuad = existing?.mode === 'quad' ? (existing.sources ?? {}) : null
+      if (!prevQuad) {
+        for (const screen of SCREEN_NAMES) {
+          if (uploaded.has(screen)) continue
+          for (const ext of ALL_EXT) {
+            await fs.promises.rm(path.join(destDir, `${screen}${ext}`), { force: true }).catch(() => {})
+          }
+        }
+      }
+      const metaSources: NonNullable<TemplateMeta['sources']> = { ...(prevQuad ?? {}) }
+      for (const screen of uploaded) {
+        const src = sources[screen]!
         // Screen-Präfix entkoppelt gleichnamige Dateien mehrerer Leinwände
         const stored = `${screen}__${src.originalName}`
+        const old = metaSources[screen]
+        if (old && old.file !== stored) {
+          await fs.promises.rm(path.join(originalDir, old.file), { force: true }).catch(() => {})
+        }
         await fs.promises.copyFile(src.uploadPath, path.join(originalDir, stored)).catch(() => {})
         const kind = VIDEO_EXTENSIONS.has(path.extname(src.originalName).toLowerCase()) ? 'video' : 'image'
         metaSources[screen] = { file: stored, fit: src.fit, kind }
       }
       meta.sources = metaSources
+      meta.targets = Object.keys(metaSources) as ScreenName[]
     } else {
       await fs.promises.copyFile(params.uploadPath, path.join(originalDir, params.originalName)).catch(() => {})
       meta.source = params.originalName

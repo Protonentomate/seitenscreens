@@ -51,8 +51,14 @@ export async function startApi(
   // die Aktion ausgeführt wurde.
   await app.register(fastifyCors, { origin: true })
   await app.register(fastifyWebsocket)
-  // files: 4 — Modus "quad" schickt bis zu 4 Dateien (je eine pro Leinwand)
-  await app.register(fastifyMultipart, { limits: { fileSize: 2 * 1024 * 1024 * 1024, files: 4 } })
+  // files: 4 — Modus "quad" schickt bis zu 4 Dateien (je eine pro Leinwand).
+  // throwFileSizeLimit:false — bei Übergröße bricht der Part still ab
+  // (part.file.truncated=true) statt zu werfen; dann greift unsere 413-Antwort
+  // statt eines generischen 400 mit interner Fehlerklasse.
+  await app.register(fastifyMultipart, {
+    throwFileSizeLimit: false,
+    limits: { fileSize: 2 * 1024 * 1024 * 1024, files: 4 },
+  })
 
   const ok = (extra: Record<string, unknown> = {}) => ({ ok: true, ...extra, state: store.snapshot() })
 
@@ -526,8 +532,16 @@ export async function startApi(
           await pipeline(part.file, fs.createWriteStream(up))
           cleanup.push(up)
           if (part.file.truncated) truncated = true
-          if (screen) quadFiles.set(screen, { uploadPath: up, originalName: safe })
-          else mainFile = { uploadPath: up, originalName: safe }
+          if (screen) {
+            // Doppeltes Feld für dieselbe Leinwand: alte Temp-Datei sofort löschen,
+            // sonst bliebe sie verwaist (nur die letzte landet in params.sources)
+            const prev = quadFiles.get(screen)
+            if (prev) fs.rmSync(prev.uploadPath, { force: true })
+            quadFiles.set(screen, { uploadPath: up, originalName: safe })
+          } else {
+            if (mainFile) fs.rmSync(mainFile.uploadPath, { force: true })
+            mainFile = { uploadPath: up, originalName: safe }
+          }
         } else {
           fields[part.fieldname] = String((part as { value?: unknown }).value ?? '').trim()
         }
