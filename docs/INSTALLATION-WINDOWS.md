@@ -1,6 +1,8 @@
 # Installation & Betrieb auf dem Beamer-PC (Windows)
 
 Anleitung für die Einrichtung auf dem Kirchen-PC oder einem neuen Rechner.
+Für die Schnellversion (Desktop-Icon per Doppelklick, Autostart-Skript)
+siehe [INSTALLATION-KURZ.md](INSTALLATION-KURZ.md).
 
 > **Stand:** Bis Meilenstein M6 fertig ist (NSIS-Installer, Autostart,
 > gebündeltes ffmpeg), läuft die App über Node.js aus dem Quellcode.
@@ -103,6 +105,12 @@ die Gruppe mit in die URL nehmen:
 
 ## 6. Autostart *(bis M6: manuell einrichten)*
 
+**Einfache Variante:** Doppelklick auf
+`scripts\windows\Autostart einrichten.bat` — legt einen (unsichtbaren)
+Start bei der Windows-Anmeldung an; Auto-Login des Technik-Benutzers
+aktivieren (`netplwiz`). Entfernen mit `Autostart entfernen.bat`.
+
+**Robuste Variante** (startet bei Absturz neu) —
 Aufgabenplanung (`taskschd.msc`) → Einfache Aufgabe:
 - Trigger: **Bei Anmeldung** (des Technik-Benutzers, mit Auto-Login)
 - Aktion: Programm `cmd`, Argumente `/c cd /d C:\seitenscreens && npm start`

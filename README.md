@@ -9,7 +9,8 @@ Leinwände, hält Videos über alle vier Screens synchron (< 10 ms) und wird
 
 **Weitere Doku:**
 - [docs/SYSTEM.md](docs/SYSTEM.md) — Anforderungen, Architektur, Entscheidungen, Medien-Konventionen
-- [docs/INSTALLATION-WINDOWS.md](docs/INSTALLATION-WINDOWS.md) — Installation & Betrieb auf dem Beamer-PC
+- [docs/INSTALLATION-KURZ.md](docs/INSTALLATION-KURZ.md) — Schnellversion: Desktop-Icon & Autostart per Doppelklick (`scripts/windows/`)
+- [docs/INSTALLATION-WINDOWS.md](docs/INSTALLATION-WINDOWS.md) — Installation & Betrieb auf dem Beamer-PC (ausführlich)
 
 ## Schnellstart (Entwicklung, macOS/Windows)
 
