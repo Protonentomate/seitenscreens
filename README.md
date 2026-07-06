@@ -1,11 +1,12 @@
 # Seitenscreens
 
-Projektions-Software für die Seitenbeamer der Kirche — ersetzt das bisherige
-OBS-Setup. Zwei Beamer projizieren auf je zwei weisse Hochformat-Leinwände
-(4 logische Screens: **LinksLinks, LinksRechts, RechtsLinks, RechtsRechts**).
-Die App verzerrt Bilder und loopende Videos per Corner-Pin exakt auf die
-Leinwände, hält Videos über alle vier Screens synchron (< 10 ms) und wird
-über ein Web-Interface oder das Stream Deck bedient.
+Projektions-Software für Seitenbeamer in Kirchen, Sälen und auf Bühnen —
+entstanden als Ersatz für ein OBS+StreamFX-Setup. Zwei Beamer projizieren
+auf je zwei Hochformat-Leinwände (4 logische Screens: **LinksLinks,
+LinksRechts, RechtsLinks, RechtsRechts**). Die App verzerrt Bilder und
+loopende Videos per Corner-Pin exakt auf die Leinwände, hält Videos über
+alle vier Screens synchron (< 10 ms) und wird über ein Web-Interface oder
+ein Stream Deck bedient.
 
 **Weitere Doku:**
 - [docs/SYSTEM.md](docs/SYSTEM.md) — Anforderungen, Architektur, Entscheidungen, Medien-Konventionen
@@ -19,11 +20,12 @@ Voraussetzungen: Node.js ≥ 20, ffmpeg + ffprobe im PATH (macOS: `brew install 
 ```bash
 npm install
 
-# Einmalig: Kalibrierung aus dem alten OBS-Export übernehmen + Medienordner setzen
-npm run import-streamfx -- \
-  --obs "../Seitenbeamer_Grundeinstellung_Brian_OBS.json" \
-  --config ./dev/config.json \
-  --media-root "../_Vorlagen"
+# Einmalig: lokale Dev-Config anlegen (dev/ ist nicht versioniert)
+mkdir -p dev
+echo '{ "mediaRoot": "/pfad/zum/medienordner" }' > dev/config.json
+
+# Optional: Kalibrierung aus einem bestehenden OBS/StreamFX-Export übernehmen
+npm run import-streamfx -- --obs <obs-export.json> --config ./dev/config.json --media-root <medienordner>
 
 # Starten (Simulator-Modus: beide Beamer als skalierte Fenster)
 SEITENSCREENS_CONFIG=./dev/config.json npm run dev
@@ -39,10 +41,11 @@ Steuerung über zwei getrennte Seiten:
   **Einstellungen** (u.a. Medienordner-Pfad). Bewusst getrennt, ohne Auth
   (Kirchen-LAN).
 
-Vorlagen und Einzelbilder liegen im `_Vorlagen`-Ordner, optional gruppiert in
-Unterordnern (z.B. `Pimi/Scene 1/…`, `Pimi/Worship.jpg`) — beide Seiten
-zeigen dafür Gruppen-Tabs. Details zur Ordner-Konvention:
-[docs/SYSTEM.md](docs/SYSTEM.md), Abschnitt 3.
+Vorlagen und Einzelbilder liegen im Medienordner (z.B. Nextcloud-gesynct),
+optional gruppiert in Unterordnern (z.B. `Jugend/Scene 1/…`,
+`Jugend/Worship.jpg`) — beide Seiten zeigen dafür Gruppen-Tabs; welcher Tab
+vorgewählt ist, bestimmt die Einstellung „Standard-Gruppe". Details zur
+Ordner-Konvention: [docs/SYSTEM.md](docs/SYSTEM.md), Abschnitt 3.
 
 ```bash
 npm test           # Unit-Tests (Homographie, StreamFX-Import)
@@ -88,5 +91,7 @@ Die POST-Endpunkte am Tabellenende sind primär für die Admin-UI gedacht.
 | `POST /api/display/rotation` | Ausgabe um 180° drehen, Body `{window, deg:0\|180}` |
 | `GET\|POST /api/display/identify` | Fenster-Kennung 4 s gross einblenden (links/rechts) |
 | `POST /api/display/refullscreen` | Vollbild auf den Beamer-Fenstern erzwingen |
+| `GET /api/config/export` | Komplette Konfiguration (inkl. Kalibrierung) als JSON-Datei herunterladen |
+| `POST /api/config/import` | Konfigurations-Backup zurückspielen (JSON-Body = exportierte Datei) |
 
 Live-Updates für UIs: WebSocket `ws://…:8080/ws` (komplette Zustands-Schnappschüsse).

@@ -42,23 +42,25 @@ export function templateApplyPath(t: TemplateInfo): string {
   return `/api/template/${segments.map(encodeURIComponent).join('/')}/apply`
 }
 
-/** Gruppe eines Einzelbilds: erster Pfadteil ("Pimi/bild.jpg" → "Pimi"), Wurzel = ''. */
+/** Gruppe eines Einzelbilds: erster Pfadteil ("Gruppe/bild.jpg" → "Gruppe"), Wurzel = ''. */
 export function singleGroup(file: string): string {
   const slash = file.indexOf('/')
   return slash === -1 ? '' : file.slice(0, slash)
 }
 
 /**
- * Gruppen aus Vorlagen UND Einzelbildern ableiten, sortiert: "Pimi" (falls
- * vorhanden) zuerst, dann alphabetisch; Wurzel-Inhalte ('') zuletzt als "Allgemein".
+ * Gruppen aus Vorlagen UND Einzelbildern ableiten. Die konfigurierte
+ * Standard-Gruppe (Einstellungen) steht zuerst, dann alphabetisch;
+ * Wurzel-Inhalte ('') zuletzt als "Allgemein".
  */
-export function groupNames(templates: TemplateInfo[], singles: MediaFileInfo[] = []): string[] {
+export function groupNames(templates: TemplateInfo[], singles: MediaFileInfo[] = [], defaultGroup = ''): string[] {
+  const def = defaultGroup.trim().normalize('NFC').toLowerCase()
   const set = new Set<string>([...templates.map((t) => t.group), ...singles.map((s) => singleGroup(s.file))])
   const named = [...set].filter((g) => g !== '')
   named.sort((a, b) => {
-    const aPimi = a.toLowerCase() === 'pimi' ? 0 : 1
-    const bPimi = b.toLowerCase() === 'pimi' ? 0 : 1
-    if (aPimi !== bPimi) return aPimi - bPimi
+    const aDef = def && a.normalize('NFC').toLowerCase() === def ? 0 : 1
+    const bDef = def && b.normalize('NFC').toLowerCase() === def ? 0 : 1
+    if (aDef !== bDef) return aDef - bDef
     return a.localeCompare(b, 'de')
   })
   if (set.has('')) named.push('')

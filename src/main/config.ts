@@ -56,10 +56,11 @@ export function defaultConfig(): AppConfig {
       yOffsetsMm: [0, 0, 0, 0],
     },
     windows: { assignments: {}, rotation: {} },
+    defaultGroup: '',
   }
 }
 
-function mergeWithDefaults(loaded: Partial<AppConfig>): AppConfig {
+export function mergeWithDefaults(loaded: Partial<AppConfig>): AppConfig {
   const def = defaultConfig()
   const merged: AppConfig = {
     ...def,
@@ -73,6 +74,7 @@ function mergeWithDefaults(loaded: Partial<AppConfig>): AppConfig {
       assignments: { ...(loaded.windows?.assignments ?? {}) },
       rotation: { ...(loaded.windows?.rotation ?? {}) },
     },
+    defaultGroup: typeof loaded.defaultGroup === 'string' ? loaded.defaultGroup : def.defaultGroup,
   }
   // Nur bekannte Screens behalten
   for (const key of Object.keys(merged.screens)) {

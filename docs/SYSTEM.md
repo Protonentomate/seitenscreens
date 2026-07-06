@@ -101,7 +101,7 @@ reicht NICHT).
 
 ```
 _Vorlagen/
-├── Pimi/                     ← Ordner ohne Leinwand-Dateien = Gruppe
+├── Jugend/                   ← Ordner ohne Leinwand-Dateien = Gruppe
 │   ├── Scene 1/              ← Unterordner der Gruppe = Vorlage
 │   │   ├── LinksLinks.jpg    ← eine Datei pro Leinwand
 │   │   ├── LinksRechts.mp4   ← Video schlägt Bild (mp4 > webm > png > jpg > webp)
@@ -119,12 +119,12 @@ _Vorlagen/
   usw.) enthält, ist eine Vorlage **ohne** Gruppe — die bisherige flache
   Struktur bleibt kompatibel und erscheint im Tab „Allgemein". Ein
   Wurzel-Ordner ohne Leinwand-Dateien gilt als **Gruppe**, seine Unterordner
-  als Vorlagen (z.B. `Pimi/`, `Upgrade/`, `NTL/`). Lose Mediendateien direkt
+  als Vorlagen (z.B. `Gottesdienst/`, `Jugend/`, `Events/`). Lose Mediendateien direkt
   in einem Gruppen-Ordner sind **Einzelbilder dieser Gruppe**; lose Dateien
   in der Wurzel gehören zur Gruppe „Allgemein". Beide Web-Seiten zeigen
   Gruppen-Tabs und filtern auch die Einzelbilder nach dem gewählten Tab;
-  „Pimi" ist als Standard-Tab vorgewählt (sonst die alphabetisch erste
-  Gruppe).
+  vorgewählt ist die in den Einstellungen konfigurierte **Standard-Gruppe**
+  (sonst die alphabetisch erste).
 - Vorlagen dürfen unvollständig sein (Anwenden verlangt dann Bestätigung/`force=1`)
 - Gross-/Kleinschreibung der Dateinamen ist egal, Umlaute funktionieren (NFC-Normalisierung)
 

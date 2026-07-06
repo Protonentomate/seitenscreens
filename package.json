@@ -4,7 +4,7 @@
   "description": "Projektions-Player für die Seitenbeamer (ersetzt OBS): 4 corner-gepinnte Leinwände, Bilder & synchronisierte Loop-Videos, Web-Steuerung",
   "main": "out/main/index.js",
   "private": true,
-  "author": "Brian Ceccato",
+  "author": "Protonentomate",
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",

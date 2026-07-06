@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { streamFxToQuad, cornersFromFilterSettings } from '../src/shared/streamfx'
 
-/** Echte Werte aus dem OBS-Export der Kirche (Seitenbeamer_Grundeinstellung_Brian). */
+/** Echte Werte aus einem produktiven OBS/StreamFX-Export. */
 const LINKS_LINKS = {
   'Corners.TopLeft.X': -56.25,
   'Corners.TopLeft.Y': -79.17,

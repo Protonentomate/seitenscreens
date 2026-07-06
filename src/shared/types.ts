@@ -84,6 +84,8 @@ export interface AppConfig {
   projectors: ProjectorConfig[]
   layout: WallLayout
   windows: WindowSettings
+  /** Gruppe, deren Tab in den UIs vorgewählt ist ('' = alphabetisch erste). */
+  defaultGroup: string
 }
 
 /**
@@ -154,7 +156,7 @@ export interface MediaFileInfo {
 export interface TemplateInfo {
   name: string
   /**
-   * Gruppe = Unterordner im Medienordner (z.B. "Pimi", "Upgrade", "NTL").
+   * Gruppe = Unterordner im Medienordner (z.B. "Gottesdienst", "Jugend").
    * Vorlagen direkt im Wurzelordner (bisherige Struktur) haben group ''.
    */
   group: string
@@ -206,6 +208,7 @@ export interface AppState {
   /** Angeschlossene Displays (für die Zuordnung in der Admin-UI). */
   displays: DisplayInfo[]
   windowSettings: WindowSettings
+  defaultGroup: string
   /**
    * Gerade bearbeitete Ecke in der Kalibrier-UI — der Player markiert sie
    * im Testbild, damit man auf der echten Leinwand sieht, woran man zieht.

@@ -114,7 +114,53 @@ export class Store extends EventEmitter {
       displays: this.displays,
       windowSettings: this.config.windows,
       calibrationFocus: this.calibrationFocus,
+      defaultGroup: this.config.defaultGroup,
     }
+  }
+
+  setDefaultGroup(group: string): void {
+    if (group === this.config.defaultGroup) return
+    this.config.defaultGroup = group
+    saveConfig(this.config)
+    this.broadcast()
+  }
+
+  /**
+   * Komplette Konfiguration ersetzen (Import aus Datei, v.a. als Backup der
+   * Kalibrierung). Der Server-Port bleibt der laufende (Rebind zur Laufzeit
+   * nicht möglich); ein Medienordner, den es auf diesem Rechner nicht gibt,
+   * wird nicht übernommen (Import von einem anderen Rechner).
+   */
+  importConfig(next: AppConfig): { mediaRootKept: boolean } {
+    const current = this.config
+    let mediaRoot = next.mediaRoot
+    let mediaRootKept = false
+    if (mediaRoot !== current.mediaRoot) {
+      let exists = false
+      try {
+        exists = Boolean(mediaRoot) && fs.statSync(mediaRoot).isDirectory()
+      } catch {
+        exists = false
+      }
+      if (!exists) {
+        mediaRoot = current.mediaRoot
+        mediaRootKept = true
+      }
+    }
+    const mediaRootChanged = mediaRoot !== current.mediaRoot
+    this.config = { ...next, mediaRoot, server: current.server }
+    if (this.configSaveTimer) {
+      clearTimeout(this.configSaveTimer)
+      this.configSaveTimer = null
+    }
+    saveConfig(this.config)
+    if (mediaRootChanged) {
+      clearCacheRegistry()
+      this.emit('mediaroot-changed', mediaRoot)
+    }
+    this.emit('projectors-changed', this.config.projectors)
+    this.broadcast()
+    return { mediaRootKept }
   }
 
   setDisplays(displays: DisplayInfo[]): void {

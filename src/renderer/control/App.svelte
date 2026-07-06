@@ -61,10 +61,10 @@
 
   // --- Vorlagen-Gruppen (Tabs) ---
 
-  const groups = $derived(state ? groupNames(state.mediaIndex.templates, state.mediaIndex.singles) : [])
+  const groups = $derived(state ? groupNames(state.mediaIndex.templates, state.mediaIndex.singles, state.defaultGroup) : [])
   let selectedGroup = $state<string | null>(null)
-  // Start-Tab: Pimi (falls vorhanden), sonst erste Gruppe — einmalig, danach
-  // bleibt die Auswahl des Anwenders bestehen
+  // Start-Tab: die konfigurierte Standard-Gruppe (steht vorne), sonst die
+  // erste — einmalig, danach bleibt die Auswahl des Anwenders bestehen
   $effect(() => {
     if (selectedGroup === null && groups.length > 0) {
       selectedGroup = groups[0]

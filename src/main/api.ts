@@ -16,7 +16,8 @@ import type { ProjectorManager } from './projectors'
 import type { IngestQueue } from './ingest'
 import { resolveMediaFile, openFileStream, isServableMedia } from './media'
 import { isScreenName, SCREEN_NAMES, WINDOW_ROLES, type ScreenName, type WindowRole } from '../shared/screens'
-import type { MediaFileInfo, IngestFit, IngestMode, Quad, SpanGaps } from '../shared/types'
+import type { AppConfig, MediaFileInfo, IngestFit, IngestMode, Quad, SpanGaps } from '../shared/types'
+import { mergeWithDefaults } from './config'
 
 /** Fenster-Aktionen, die main/index bereitstellt (Identify, Vollbild erzwingen). */
 export interface WindowControl {
@@ -559,13 +560,52 @@ export async function startApi(
         transitionMs: cfg.transitionMs,
         projectors: cfg.projectors,
         layout: cfg.layout,
+        defaultGroup: cfg.defaultGroup,
       },
     }
   })
 
+  // --- Konfiguration sichern & wiederherstellen (v.a. die Kalibrierung) ---
+
+  app.get('/api/config/export', async (_req, reply) => {
+    reply.header('Content-Type', 'application/json')
+    reply.header('Content-Disposition', 'attachment; filename="seitenscreens-config.json"')
+    return JSON.stringify(store.getConfig(), null, 2)
+  })
+
+  app.post('/api/config/import', async (req, reply) => {
+    const body = req.body
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return reply.status(400).send({ ok: false, error: 'JSON-Config erwartet' })
+    }
+    const candidate = body as Partial<AppConfig>
+    if (!candidate.screens || typeof candidate.screens !== 'object') {
+      return reply.status(400).send({ ok: false, error: 'Keine Seitenscreens-Config (Feld "screens" fehlt)' })
+    }
+    const merged = mergeWithDefaults(candidate)
+    // Kalibrierung muss vollständig und numerisch sein — sonst bleibt der
+    // Player auf kaputten Transformationen sitzen
+    for (const screen of SCREEN_NAMES) {
+      const corners = merged.screens[screen]?.corners
+      for (const key of ['tl', 'tr', 'br', 'bl'] as const) {
+        const p = corners?.[key]
+        if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+          return reply.status(400).send({ ok: false, error: `Config ungültig: Kalibrierung ${screen}/${key}` })
+        }
+      }
+    }
+    const result = store.importConfig(merged)
+    return ok({ mediaRootKept: result.mediaRootKept })
+  })
+
   app.post('/api/config', async (req, reply) => {
     const body = req.body as
-      | { mediaRoot?: string; transitionMs?: number; projectors?: Array<{ id: string; host: string }> }
+      | {
+          mediaRoot?: string
+          transitionMs?: number
+          projectors?: Array<{ id: string; host: string }>
+          defaultGroup?: string
+        }
       | null
       | undefined
     if (!body || typeof body !== 'object') {
@@ -641,6 +681,7 @@ export async function startApi(
     if (newTransitionMs !== undefined) store.setTransitionMs(newTransitionMs)
     for (const p of newProjectors) store.setProjectorHost(p.id, p.host)
     if (newLayout) store.setLayout(newLayout)
+    if (body.defaultGroup !== undefined) store.setDefaultGroup(String(body.defaultGroup).trim())
     return ok()
   })
 

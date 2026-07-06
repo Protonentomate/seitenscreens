@@ -97,11 +97,11 @@ oder den fertigen Link aus `/api/templates` kopieren.
 Die alten Beamer-ein/aus-Knöpfe (direkt auf `…/form/control_cgi`)
 funktionieren unverändert weiter.
 
-Vorlagen in Gruppen (Unterordner in `_Vorlagen`, z.B. `Pimi/Scene 1`):
+Vorlagen in Gruppen (Unterordner in `_Vorlagen`, z.B. `Jugend/Scene 1`):
 `/api/template/{Name}/apply` funktioniert nur, solange der Name über alle
 Gruppen eindeutig ist (sonst Antwort 409 mit Kandidatenliste) — im Zweifel
 die Gruppe mit in die URL nehmen:
-`http://<PC-IP>:8080/api/template/Pimi/Scene%201/apply`
+`http://<PC-IP>:8080/api/template/Jugend/Scene%201/apply`
 
 ## 6. Autostart *(bis M6: manuell einrichten)*
 
@@ -127,7 +127,7 @@ bereits da (`/admin` → Tab „Anzeige").
 
 Das alte Setup bleibt installiert. Falls nötig:
 1. Seitenscreens-Aufgabe in der Aufgabenplanung deaktivieren, App beenden
-2. OBS starten, Szenensammlung „Seitenbeamer_Grundeinstellung_Brian" laden
+2. OBS starten, die bisherige Szenensammlung laden
 3. Rechtsklick auf Szene → Vollbild-Projektor auf die beiden Beamer
 4. Alte GUI/Stream-Deck-Profile funktionieren wie bisher
 
