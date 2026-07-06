@@ -508,6 +508,7 @@ export async function startApi(
     const mode = fieldValue('mode') as IngestMode
     const fit = (fieldValue('fit') || 'contain') as IngestFit
     const gaps = (fieldValue('gaps') || 'exact') as SpanGaps
+    const mirror = fieldValue('mirror') === '1' || fieldValue('mirror') === 'true'
     const target = fieldValue('target')
 
     if (!['single', 'clone', 'span', 'span2'].includes(mode)) {
@@ -541,6 +542,7 @@ export async function startApi(
       target: mode === 'single' ? (target as ScreenName) : undefined,
       fit,
       gaps,
+      mirror,
     })
     if (!result.ok) {
       fs.rmSync(uploadPath, { force: true })

@@ -74,6 +74,8 @@ export interface IngestParams {
   fit: IngestFit
   /** Nur bei span/span2: Lücken maskieren ('exact') oder nahtlos teilen ('none'). */
   gaps: SpanGaps
+  /** Nur bei span2: die rechte Seite horizontal spiegeln (symmetrische Bewegung). */
+  mirror: boolean
 }
 
 /** Skalierungs-Filter für ffmpeg je Einpass-Modus. */
@@ -352,17 +354,21 @@ export class IngestQueue {
     }
 
     if (params.mode === 'span2') {
-      // Je über 2 Leinwände gespannt: linkes Paar und rechtes Paar identisch
+      // Je über 2 Leinwände gespannt: linkes Paar und rechtes Paar identisch;
+      // bei mirror wird das rechte Paar (Index 1) horizontal gespiegelt
       const layout = this.store.getConfig().layout
-      for (const pair of span2Pairs(layout, IMAGE_TARGET_W, IMAGE_TARGET_H, params.gaps)) {
-        const wall = await base
+      const pairs = span2Pairs(layout, IMAGE_TARGET_W, IMAGE_TARGET_H, params.gaps)
+      for (let pi = 0; pi < pairs.length; pi++) {
+        const pair = pairs[pi]!
+        let img = base
           .clone()
           .resize(pair.wallW, pair.wallH, {
             fit: sharpFit(params.fit),
             background: { r: 0, g: 0, b: 0 },
           })
           .flatten({ background: { r: 0, g: 0, b: 0 } })
-          .toBuffer()
+        if (params.mirror && pi === 1) img = img.flop()
+        const wall = await img.toBuffer()
         for (const crop of pair.crops) {
           if (!targets.includes(crop.screen)) continue
           const out = path.join(jobDir, `${crop.screen}.jpg`)
@@ -432,7 +438,10 @@ export class IngestQueue {
       pairs.forEach((pair, p) => {
         const src = p === 0 ? 'srcA' : 'srcB'
         const scale = scaleFilter(params.fit, pair.wallW, pair.wallH)
-        parts.push(`[${src}]${scale},setsar=1[w${p}]`, `[w${p}]split=2[p${p}a][p${p}b]`)
+        // Rechtes Paar (p===1) bei mirror horizontal spiegeln — die ganze
+        // Doppel-Leinwand wird gespiegelt, dann wie gehabt zugeschnitten
+        const flip = params.mirror && p === 1 ? ',hflip' : ''
+        parts.push(`[${src}]${scale}${flip},setsar=1[w${p}]`, `[w${p}]split=2[p${p}a][p${p}b]`)
         pair.crops.forEach((crop, c) => {
           const label = `o${p}${c}`
           parts.push(
@@ -507,6 +516,7 @@ export class IngestQueue {
       mode: params.mode,
       fit: params.fit,
       gaps: params.mode === 'span' || params.mode === 'span2' ? params.gaps : undefined,
+      mirror: params.mode === 'span2' ? params.mirror : undefined,
       targets,
       source: params.originalName,
       layout: params.mode === 'span' || params.mode === 'span2' ? this.store.getConfig().layout : undefined,

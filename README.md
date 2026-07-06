@@ -83,7 +83,7 @@ Die POST-Endpunkte am Tabellenende sind primär für die Admin-UI gedacht.
 | `GET /api/testpattern/on\|off` | Testbild für Kalibrier-Kontrolle |
 | `GET /api/projector/on\|off` | Beide Beamer schalten (`/api/projector/{links\|rechts}/on\|off` einzeln) |
 | `GET /api/state`, `/api/health`, `/api/templates` | Zustand, Diagnose, Medienliste |
-| `POST /api/upload` | Multipart-Upload: `mode` = `single`\|`clone`\|`span`\|`span2`, `fit` = `contain`\|`cover`\|`stretch`, `gaps` = `exact`\|`none` (Übergang beim Spannen), `group` = Gruppen-Ordner (optional) |
+| `POST /api/upload` | Multipart-Upload: `mode` = `single`\|`clone`\|`span`\|`span2`, `fit` = `contain`\|`cover`\|`stretch`, `gaps` = `exact`\|`none` (Übergang beim Spannen), `mirror` = `1`\|`0` (nur span2: rechte Seite spiegeln), `group` = Gruppen-Ordner (optional) |
 | `POST /api/trash` | In den Papierkorb (`_Papierkorb/` im Medienordner) verschieben, Body `{type:'template', ref}` oder `{type:'single', file}` |
 | `POST /api/calibration/{Screen}` | Leinwand-Ecken setzen, Body `{corners:{tl:{x,y},tr,br,bl}}` |
 | `POST /api/calibration/focus` | Ecke auf der Leinwand magenta markieren, Body `{screen,corner}` (`{}` löscht die Markierung) |
