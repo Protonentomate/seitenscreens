@@ -10,11 +10,17 @@ Einrichtung, Stream Deck und Fehlersuche steht in
 2. **ffmpeg**: „release essentials"-ZIP von https://www.gyan.dev/ffmpeg/builds/
    nach `C:\ffmpeg\` entpacken und `C:\ffmpeg\bin` zum PATH hinzufügen
    (Details in der ausführlichen Anleitung, Abschnitt 1).
-3. Den Projektordner `seitenscreens` auf den PC kopieren, z.B. nach
-   `C:\seitenscreens` (USB-Stick, Netzwerk oder `git clone`).
+3. Den Projektordner `seitenscreens` auf den PC holen, z.B. nach
+   `C:\seitenscreens` — am besten per `git clone`, oder den Ordner
+   kopieren **ohne** die Unterordner `node_modules` und `out`.
 
-Mehr braucht es nicht — `npm install` und der Build passieren beim ersten
-Start automatisch.
+> **Wichtig:** `node_modules` NICHT von einem anderen Rechner (z.B. Mac)
+> mitkopieren — darin stecken plattformspezifische Programmdateien (Electron,
+> Bildverarbeitung), die nur auf dem Rechner laufen, auf dem sie installiert
+> wurden. Sonst kommt beim Start `Error: Electron uninstall`.
+
+Mehr braucht es nicht — `npm install`, das Nachladen der Electron-Programmdatei
+und der Build passieren beim ersten Start automatisch.
 
 ## 2. Desktop-Icon anlegen
 
