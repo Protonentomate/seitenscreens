@@ -12,6 +12,7 @@ ein Stream Deck bedient.
 - [docs/SYSTEM.md](docs/SYSTEM.md) — Anforderungen, Architektur, Entscheidungen, Medien-Konventionen
 - [docs/INSTALLATION-KURZ.md](docs/INSTALLATION-KURZ.md) — Schnellversion: Desktop-Icon & Autostart per Doppelklick (`scripts/windows/`)
 - [docs/INSTALLATION-WINDOWS.md](docs/INSTALLATION-WINDOWS.md) — Installation & Betrieb auf dem Beamer-PC (ausführlich)
+- [docs/STREAMDECK.md](docs/STREAMDECK.md) — Stream Deck verbinden (URLs, Gruppen, Vorschau-Bilder auf den Knöpfen)
 
 ## Schnellstart (Entwicklung, macOS/Windows)
 

@@ -85,6 +85,9 @@ action=allow protocol=TCP localport=8080`
 
 ## 5. Stream Deck umstellen
 
+> Ausführliche Kurzanleitung inkl. Vorschau-Bilder auf den Knöpfen:
+> [STREAMDECK.md](STREAMDECK.md).
+
 Das vorhandene Plugin **„API Request"** (`com.github.mjbnz.sd-api-request`)
 weiterverwenden — nur die URLs ändern (Methode GET, kein Body):
 
