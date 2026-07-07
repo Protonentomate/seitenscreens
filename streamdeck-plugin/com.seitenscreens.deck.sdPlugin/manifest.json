@@ -1,0 +1,28 @@
+{
+  "SDKVersion": 2,
+  "Name": "Seitenscreens",
+  "Version": "1.0.0",
+  "Author": "Seitenscreens",
+  "Description": "Vorlagen der Seitenscreens-Projektion anwenden — mit automatisch aktualisierter Vorschau auf dem Knopf.",
+  "Category": "Seitenscreens",
+  "CategoryIcon": "icons/plugin",
+  "Icon": "icons/plugin",
+  "URL": "https://github.com/Protonentomate/seitenscreens",
+  "CodePath": "plugin.html",
+  "PropertyInspectorPath": "pi.html",
+  "Software": { "MinimumVersion": "5.0" },
+  "OS": [
+    { "Platform": "windows", "MinimumVersion": "10" },
+    { "Platform": "mac", "MinimumVersion": "10.13" }
+  ],
+  "Actions": [
+    {
+      "UUID": "com.seitenscreens.deck.template",
+      "Name": "Vorlage anwenden",
+      "Icon": "icons/action",
+      "Tooltip": "Wendet eine Vorlage an und zeigt ihre Vorschau auf dem Knopf.",
+      "PropertyInspectorPath": "pi.html",
+      "States": [{ "Image": "icons/key" }]
+    }
+  ]
+}

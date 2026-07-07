@@ -62,22 +62,57 @@ http://<PC>:8080/api/button/{Gruppe}/{Name}      (bei Gruppen)
 Optional: `?size=144` (Pixel, Standard 144) und `?format=png` (Standard JPEG).
 Bei Video-Vorlagen wird automatisch ein Standbild verwendet.
 
-**So kommt das Bild auf den Knopf** (Stream-Deck-Software):
+**Von Hand als Symbol setzen** (mit dem „API Request"-Plugin):
 
 1. Die Button-URL im Browser öffnen und das Bild speichern (Rechtsklick →
    „Bild speichern unter…").
 2. In der Stream-Deck-Software den Knopf auswählen und das gespeicherte Bild
    als Symbol setzen (Bereich „Symbol" / per Drag&Drop auf den Knopf).
 
-So sieht man auf dem Knopf direkt, welche Vorlage er schaltet. Ändert sich der
-Inhalt einer Vorlage (z.B. nach einem neuen Upload oder „Neu rechnen"), einfach
-die URL erneut öffnen und das aktualisierte Bild neu setzen.
+So sieht man auf dem Knopf direkt, welche Vorlage er schaltet. Nachteil: ändert
+sich der Inhalt einer Vorlage, muss man das Bild von Hand neu setzen. Wer das
+automatisch möchte, nimmt das Plugin aus Abschnitt 5.
 
-> Hinweis: Das „API Request"-Plugin selbst setzt keine Knopf-Bilder — es löst
-> nur die Aktion aus. Das Vorschau-Bild wird wie oben von Hand als Symbol
-> hinterlegt (einmalig pro Knopf).
+> Hinweis: Das „API Request"-Plugin setzt keine Knopf-Bilder — es löst nur die
+> Aktion aus. Automatisch aktualisierte Bilder gibt es nur mit dem eigenen
+> Plugin (Abschnitt 5).
 
-## 5. Beispiel-Profil
+## 5. Eigenes Plugin mit automatischer Vorschau (empfohlen)
+
+Im Repo liegt ein kleines Stream-Deck-Plugin
+(`streamdeck-plugin/com.seitenscreens.deck.sdPlugin`), das beides in einem Knopf
+vereint: **beim Drücken** wendet es die Vorlage an, und **im Hintergrund** lädt
+es das Vorschau-Bild vom Server und setzt es automatisch als Knopf-Bild. Ändert
+sich der Inhalt einer Vorlage (Upload / „Neu rechnen"), aktualisiert sich der
+Knopf von selbst — kein manuelles Neu-Setzen mehr.
+
+**Installieren:**
+
+1. Den Ordner `com.seitenscreens.deck.sdPlugin` in den Stream-Deck-Plugin-Ordner
+   kopieren:
+   - Windows: `%APPDATA%\Elgato\StreamDeck\Plugins\`
+   - macOS: `~/Library/Application Support/com.elgato.StreamDeck/Plugins/`
+2. Die Stream-Deck-Software beenden und neu starten.
+3. Rechts in der Aktionsliste erscheint die Kategorie **„Seitenscreens"** mit
+   der Aktion **„Vorlage anwenden"** — auf einen Knopf ziehen.
+
+**Pro Knopf einstellen** (Property Inspector):
+
+- **Basis-URL**: `http://<PC>:8080` (bzw. `http://localhost:8080` am Beamer-PC)
+- **Vorlage**: Name oder `Gruppe/Name`, z.B. `Pfimi/Welcome`
+- **Beim Drücken anwenden**: an (aus = nur Vorschau-Knopf ohne Schaltfunktion)
+- **Aktualisieren alle … Sekunden**: Standard 15
+
+Das Knopf-Bild zeigt dann die erste Leinwand der Vorlage und frischt sich im
+eingestellten Takt (und direkt nach dem Anwenden) auf.
+
+> Das Plugin ist nicht signiert/paketiert — es wird als Ordner installiert
+> (siehe oben). Ungetestet auf echter Hardware; bei Problemen die Basis-URL im
+> Property Inspector prüfen (muss vom Stream-Deck-Gerät aus erreichbar sein) und
+> die Firewall-Freigabe (Abschnitt 2). Details:
+> [../streamdeck-plugin/README.md](../streamdeck-plugin/README.md).
+
+## 6. Beispiel-Profil
 
 Ein sinnvoller Sonntags-Aufbau: eine Reihe „Vorlagen anwenden" (je ein Knopf
 pro häufiger Vorlage, mit Vorschau-Bild), plus feste Knöpfe für Blackout,

@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Seitenscreens — Knopf</title>
+    <style>
+      body { font-family: system-ui, sans-serif; font-size: 13px; color: #ddd; background: #2d2d2d; margin: 0; padding: 12px; }
+      .row { margin-bottom: 10px; display: flex; flex-direction: column; gap: 3px; }
+      label { color: #9fa5ad; font-size: 12px; }
+      input[type='text'], input[type='number'] { padding: 6px 8px; border-radius: 5px; border: 1px solid #555; background: #1e1e1e; color: #eee; }
+      .check { flex-direction: row; align-items: center; gap: 8px; }
+      small { color: #888; }
+    </style>
+  </head>
+  <body>
+    <div class="row">
+      <label for="base">Basis-URL des Beamer-PCs</label>
+      <input type="text" id="base" placeholder="http://192.168.100.50:8080" />
+      <small>IP des Beamer-PCs, Port 8080. Am PC selbst: http://localhost:8080</small>
+    </div>
+    <div class="row">
+      <label for="ref">Vorlage (Name oder Gruppe/Name)</label>
+      <input type="text" id="ref" placeholder="Pfimi/Welcome" />
+      <small>Genau wie in der Verwaltung. Bei Gruppen: „Gruppe/Name".</small>
+    </div>
+    <div class="row check">
+      <input type="checkbox" id="apply" checked />
+      <label for="apply" style="margin:0">Beim Drücken die Vorlage anwenden</label>
+    </div>
+    <div class="row">
+      <label for="interval">Vorschau alle … Sekunden aktualisieren</label>
+      <input type="number" id="interval" min="3" max="600" value="15" />
+    </div>
+    <script src="pi.js"></script>
+  </body>
+</html>
