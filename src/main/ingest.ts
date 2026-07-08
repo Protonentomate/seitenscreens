@@ -73,10 +73,11 @@ export interface IngestParams {
   /** Nur bei mode 'single'. */
   target?: ScreenName
   fit: IngestFit
-  /** Nur bei span/span2: Lücken maskieren ('exact') oder nahtlos teilen ('none'). */
+  /** Nur bei span/span2: 'exact' | 'exact-nomid' | 'none'. */
   gaps: SpanGaps
-  /** Nur bei span2: die rechte Seite horizontal spiegeln (symmetrische Bewegung). */
-  mirror: boolean
+  /** Nur bei span2: linke bzw. rechte Doppel-Leinwand horizontal spiegeln. */
+  mirrorLeft: boolean
+  mirrorRight: boolean
   /** Nur bei Videos: Ende weich in den Anfang überblenden (nahtloser Loop). */
   loopSmooth: boolean
   /** Crossfade-Länge der Loop-Glättung in Sekunden. */
@@ -91,7 +92,10 @@ export interface TemplateMeta {
   mode: IngestMode
   fit?: IngestFit
   gaps?: SpanGaps
+  /** Alt (< dieser Version): einzelnes Feld = rechte Seite gespiegelt. */
   mirror?: boolean
+  mirrorLeft?: boolean
+  mirrorRight?: boolean
   loopSmooth?: boolean
   loopCrossfadeS?: number
   targets: ScreenName[]
@@ -501,7 +505,7 @@ export class IngestQueue {
             background: { r: 0, g: 0, b: 0 },
           })
           .flatten({ background: { r: 0, g: 0, b: 0 } })
-        if (params.mirror && pi === 1) img = img.flop()
+        if ((pi === 0 && params.mirrorLeft) || (pi === 1 && params.mirrorRight)) img = img.flop()
         const wall = await img.toBuffer()
         for (const crop of pair.crops) {
           if (!targets.includes(crop.screen)) continue
@@ -586,7 +590,7 @@ export class IngestQueue {
         const scale = scaleFilter(params.fit, pair.wallW, pair.wallH)
         // Rechtes Paar (p===1) bei mirror horizontal spiegeln — die ganze
         // Doppel-Leinwand wird gespiegelt, dann wie gehabt zugeschnitten
-        const flip = params.mirror && p === 1 ? ',hflip' : ''
+        const flip = (p === 0 && params.mirrorLeft) || (p === 1 && params.mirrorRight) ? ',hflip' : ''
         parts.push(`[${src}]${scale}${flip},setsar=1[w${p}]`, `[w${p}]split=2[p${p}a][p${p}b]`)
         pair.crops.forEach((crop, c) => {
           const label = `o${p}${c}`
@@ -699,7 +703,10 @@ export class IngestQueue {
         meta.gaps = params.gaps
         meta.layout = this.store.getConfig().layout
       }
-      if (params.mode === 'span2') meta.mirror = params.mirror
+      if (params.mode === 'span2') {
+        meta.mirrorLeft = params.mirrorLeft
+        meta.mirrorRight = params.mirrorRight
+      }
       if (params.loopSmooth) {
         meta.loopSmooth = true
         meta.loopCrossfadeS = params.loopCrossfadeS
@@ -764,7 +771,8 @@ export class IngestQueue {
           mode: 'quad',
           fit: 'contain',
           gaps: 'exact',
-          mirror: false,
+          mirrorLeft: false,
+          mirrorRight: false,
           loopSmooth: false,
           loopCrossfadeS: 0.5,
           sources,
@@ -780,7 +788,9 @@ export class IngestQueue {
         target: meta.mode === 'single' ? meta.targets[0] : undefined,
         fit: meta.fit ?? 'contain',
         gaps: meta.gaps ?? 'exact',
-        mirror: meta.mirror ?? false,
+        // Alt-Meta hatte nur 'mirror' (= rechte Seite)
+        mirrorLeft: meta.mirrorLeft ?? false,
+        mirrorRight: meta.mirrorRight ?? meta.mirror ?? false,
         loopSmooth: meta.loopSmooth ?? false,
         loopCrossfadeS: meta.loopCrossfadeS ?? 0.5,
       })

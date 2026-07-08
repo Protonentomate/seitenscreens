@@ -557,11 +557,14 @@ export async function startApi(
     }
     if (truncated) return fail(413, 'Datei zu gross (max. 2 GB)')
 
+    const bool = (v: string | undefined) => v === '1' || v === 'true'
     const mode = (fields.mode ?? '') as IngestMode
     const fit = (fields.fit || 'contain') as IngestFit
     const gaps = (fields.gaps || 'exact') as SpanGaps
-    const mirror = fields.mirror === '1' || fields.mirror === 'true'
-    const loopSmooth = fields.loopSmooth === '1' || fields.loopSmooth === 'true'
+    // mirrorLeft/mirrorRight; alter Client schickte nur 'mirror' (= rechte Seite)
+    const mirrorLeft = bool(fields.mirrorLeft)
+    const mirrorRight = bool(fields.mirrorRight) || bool(fields.mirror)
+    const loopSmooth = bool(fields.loopSmooth)
     let loopCrossfadeS = Number(fields.loopCrossfadeS)
     if (!Number.isFinite(loopCrossfadeS)) loopCrossfadeS = 0.5
     loopCrossfadeS = Math.min(2, Math.max(0.1, loopCrossfadeS))
@@ -573,7 +576,7 @@ export async function startApi(
       return fail(400, 'mode muss single|clone|span|span2|quad sein')
     }
     if (!isFit(fit)) return fail(400, 'fit muss contain|cover|stretch sein')
-    if (!['exact', 'none'].includes(gaps)) return fail(400, 'gaps muss exact|none sein')
+    if (!['exact', 'exact-nomid', 'none'].includes(gaps)) return fail(400, 'gaps muss exact|exact-nomid|none sein')
 
     let result: { ok: boolean; jobId?: string; error?: string }
     if (mode === 'quad') {
@@ -591,7 +594,8 @@ export async function startApi(
         mode: 'quad',
         fit,
         gaps,
-        mirror,
+        mirrorLeft,
+        mirrorRight,
         loopSmooth,
         loopCrossfadeS,
         sources,
@@ -608,7 +612,8 @@ export async function startApi(
         target: mode === 'single' ? (target as ScreenName) : undefined,
         fit,
         gaps,
-        mirror,
+        mirrorLeft,
+        mirrorRight,
         loopSmooth,
         loopCrossfadeS,
       })

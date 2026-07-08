@@ -152,10 +152,17 @@ Referenz-ffmpeg-Flags: `-c:v libx264 -preset veryfast -crf 18 -profile:v high
   (Strecken — verzerrt auf die volle Fläche).
 - **Übergang zwischen den Leinwänden** (nur `span`/`span2`, Feld `gaps`, in
   der Admin-UI als Radio „Übergang zwischen den Leinwänden"): `exact`
-  (Standard) rechnet geometrisch korrekt — Lücken zwischen den Leinwänden
-  und Höhenversatz maskieren Bildteile, durchlaufende Motive fluchten
-  physisch. `none` schneidet nichts ab — die Leinwände teilen das Motiv
-  nahtlos, Lücken und Versatz werden ignoriert.
+  (Standard) rechnet geometrisch korrekt — alle Lücken zwischen den Leinwänden
+  und der Höhenversatz maskieren Bildteile, durchlaufende Motive fluchten
+  physisch. `exact-nomid` (nur `span`) rechnet die äusseren Paare korrekt,
+  setzt aber den Mittelabstand über der Bühne (`gapsMm[1]`) auf 0 — in der
+  Mitte geht das Motiv direkt über (kein Verlust dort), nur zwischen LL–LR und
+  RL–RR bleibt der Versatz. `none` schneidet nichts ab — die Leinwände teilen
+  das Motiv nahtlos, Lücken und Versatz werden ignoriert.
+- **Spiegeln** (nur `span2`, Felder `mirrorLeft`, `mirrorRight`): spiegelt die
+  linke bzw. rechte Doppel-Leinwand horizontal (unabhängig). Mit beiden zeigt
+  eine Bewegung symmetrisch zur Mitte; mit nur einer Seite läuft dort das Video
+  gedreht.
 - **Loop glätten** (nur Videos, Felder `loopSmooth`, `loopCrossfadeS`): Option
   „Loop glätten (Ende weich in Anfang überblenden)" blendet das Videoende weich
   in den Anfang (Standard-Überblendung 0,5 s, einstellbar) — Motion-Graphics,

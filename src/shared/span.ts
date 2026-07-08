@@ -19,8 +19,11 @@ export interface SpanWall {
  * Geteilt zwischen Ingest (ffmpeg/sharp) und der Upload-Vorschau im Browser —
  * beide müssen exakt gleich rechnen, sonst lügt die Vorschau.
  *
- * gaps 'exact': Lücken zwischen den Leinwänden und Höhenversatz (äussere
- * hängen tiefer) maskieren Bildteile — durchlaufende Motive fluchten physisch.
+ * gaps 'exact': alle Lücken zwischen den Leinwänden und der Höhenversatz
+ * (äussere hängen tiefer) maskieren Bildteile — durchlaufende Motive fluchten.
+ * gaps 'exact-nomid': wie 'exact', aber der Mittelabstand (gapsMm[1], über der
+ * Bühne) = 0 — in der Mitte geht das Motiv direkt über (kein Verlust dort),
+ * die äusseren Lücken/Versätze bleiben korrekt.
  * gaps 'none': nichts geht verloren — die Leinwände teilen das Motiv nahtlos.
  */
 
@@ -36,7 +39,12 @@ function normalizedOffsets(layout: WallLayout, gaps: SpanGaps): [number, number,
 export function spanCrops(layout: WallLayout, targetW: number, targetH: number, gaps: SpanGaps): SpanWall {
   const ppmmX = targetW / layout.canvasWmm
   const ppmmY = targetH / layout.canvasHmm
-  const gapsMm = gaps === 'exact' ? layout.gapsMm : ([0, 0, 0] as const)
+  const gapsMm: readonly [number, number, number] =
+    gaps === 'exact'
+      ? layout.gapsMm
+      : gaps === 'exact-nomid'
+        ? [layout.gapsMm[0], 0, layout.gapsMm[2]]
+        : [0, 0, 0]
   const offs = normalizedOffsets(layout, gaps)
   const maxOffPx = Math.round(Math.max(...offs) * ppmmY)
   const totalMm = 4 * layout.canvasWmm + gapsMm[0] + gapsMm[1] + gapsMm[2]
@@ -71,7 +79,8 @@ export function span2Pairs(
     // Innerhalb des Paars zählt nur der RELATIVE Versatz der beiden Leinwände
     const base = Math.min(offMm[0], offMm[1])
     const rel: [number, number] = [offMm[0] - base, offMm[1] - base]
-    const gap = gaps === 'exact' ? gapMm : 0
+    // span2 kennt keinen Mittelabstand → 'exact-nomid' verhält sich wie 'exact'
+    const gap = gaps === 'none' ? 0 : gapMm
     const maxOffPx = Math.round(Math.max(...rel) * ppmmY)
     return {
       wallW: Math.round((2 * layout.canvasWmm + gap) * ppmmX),

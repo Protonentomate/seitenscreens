@@ -51,10 +51,14 @@ export interface WallLayout {
 
 /**
  * Umgang mit den physischen Lücken/Versätzen beim Spannen:
- * 'exact' = geometrisch korrekt (Lücken & Höhenversatz maskieren Bildteile),
- * 'none'  = nichts abschneiden (nahtlos geteilt, Lücken/Versatz ignoriert).
+ * 'exact'       = geometrisch korrekt (alle Lücken & Höhenversatz maskieren Bildteile),
+ * 'exact-nomid' = Paare korrekt, aber der Mittelabstand über der Bühne = 0
+ *                 (in der Mitte geht das Motiv direkt über, nur die äusseren
+ *                 Lücken/Versätze werden berücksichtigt) — nur bei „über alle 4",
+ *                 verhält sich bei span2 wie 'exact',
+ * 'none'        = nichts abschneiden (nahtlos geteilt, Lücken/Versatz ignoriert).
  */
-export type SpanGaps = 'exact' | 'none'
+export type SpanGaps = 'exact' | 'exact-nomid' | 'none'
 
 /** Zuordnung der Beamer-Fenster zu physischen Displays + Ausgabe-Drehung. */
 export interface WindowSettings {

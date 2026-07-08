@@ -32,6 +32,22 @@ describe('spanCrops', () => {
     expect(crops.map((c) => c.x)).toEqual([0, 720, 1440, 2160])
   })
 
+  it('Modus "exact-nomid": äussere Lücken + Versatz, aber Mitte = 0', () => {
+    // gaps [300, 4000, 300] → Mitte auf 0 gesetzt; ppmm = 0.72
+    const offs: WallLayout = { ...layout, yOffsetsMm: [178, 0, 0, 178] }
+    const { wallW, wallH, crops } = spanCrops(offs, 720, 1280, 'exact-nomid')
+    // Gesamtbreite: 4×1000 + 300 + 0 + 300 = 4600 mm → 3312 px
+    expect(wallW).toBe(Math.round(4600 * 0.72))
+    // LL bei 0; LR bei (1000+300)·0.72=936; RL bei (2000+300)·0.72=1656 (direkt nach LR);
+    // RR bei (3000+600)·0.72=2592
+    expect(crops.map((c) => c.x)).toEqual([0, 936, 1656, 2592])
+    // Höhenversatz bleibt (äussere tiefer)
+    expect(crops.map((c) => c.y)).toEqual([128, 0, 0, 128])
+    expect(wallH).toBe(1280 + 128)
+    // LR und RL liegen direkt aneinander (nur eine Leinwandbreite Abstand)
+    expect(crops[2]!.x - crops[1]!.x).toBe(720)
+  })
+
   it('Höhenversatz: tiefere Leinwände zeigen den unteren Ausschnitt', () => {
     // Äussere (LL, RR) hängen 178 mm tiefer als die inneren → 128 px bei targetH 1280
     const offs: WallLayout = { ...layout, yOffsetsMm: [178, 0, 0, 178] }
