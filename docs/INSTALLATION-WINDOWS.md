@@ -179,4 +179,5 @@ Das alte Setup bleibt installiert. Falls nötig:
 | Videos ruckeln | `/api/health` → `tools` ok? Hardware-Decode-Check kommt mit M6-Preflight |
 | Beamer „!" | IP korrekt? Beamer im selben Netz? Webinterface `http://<beamer-ip>` erreichbar? |
 | Bild auf falschem Beamer | `/admin` → Tab „Anzeige" → Displays zuordnen („Fenster identifizieren" hilft) |
+| Fenster nicht im Vollbild | Sollte automatisch passieren; falls Windows es verschiebt: `/admin` → Tab „Anzeige" → „Vollbild erzwingen". Notfalls im Fenster F11 drücken. |
 | `Error: Electron uninstall` beim Start | Electron-Programmdatei wurde nicht geladen (Binary-Download beim `npm install` fehlgeschlagen oder `node_modules` von einem anderen Rechner kopiert). Nachladen: `node node_modules\electron\install.js`. Das Startskript macht das ab sofort automatisch. |

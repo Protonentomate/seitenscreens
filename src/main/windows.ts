@@ -57,6 +57,32 @@ function displayForRole(config: AppConfig, role: WindowRole): Display | undefine
   return displays[Math.min(index, displays.length - 1)]
 }
 
+/**
+ * Vollbild robust erzwingen. Auf Windows „verpufft" ein `setFullScreen(true)`,
+ * das vor `show()` oder ohne Fokus kommt — deshalb erst auf das Display setzen,
+ * dann Vollbild + AlwaysOnTop + Fokus, und bei Bedarf ein paar Mal nachfassen,
+ * bis das Fenster wirklich im Vollbild ist.
+ */
+function enforceFullscreen(win: BrowserWindow, display: Display): void {
+  if (win.isDestroyed()) return
+  // Reihenfolge ist auf Windows wichtig: erst Position/Größe, dann Vollbild
+  win.setBounds(display.bounds)
+  win.setFullScreen(true)
+  win.setAlwaysOnTop(true, 'screen-saver')
+  win.moveTop()
+  win.focus()
+}
+
+function applyFullscreenWithRetries(win: BrowserWindow, display: Display, attempt = 0): void {
+  if (win.isDestroyed()) return
+  enforceFullscreen(win, display)
+  // Windows meldet den Vollbild-Status manchmal erst nach kurzer Zeit —
+  // bis zu 5× im 250-ms-Takt nachfassen, falls es noch nicht sitzt.
+  if (!win.isFullScreen() && attempt < 5) {
+    setTimeout(() => applyFullscreenWithRetries(win, display, attempt + 1), 250)
+  }
+}
+
 /** Fenster auf ein Display verschieben und dort in den Vollbildmodus bringen. */
 export function moveToDisplay(win: BrowserWindow, display: Display, simulator: boolean): void {
   if (simulator) {
@@ -66,9 +92,17 @@ export function moveToDisplay(win: BrowserWindow, display: Display, simulator: b
     return
   }
   if (win.isFullScreen()) win.setFullScreen(false)
-  win.setBounds(display.bounds)
-  win.setFullScreen(true)
-  win.setAlwaysOnTop(true, 'screen-saver')
+  applyFullscreenWithRetries(win, display)
+}
+
+/**
+ * Vollbild auf dem Display, auf dem das Fenster gerade steht, erneut erzwingen
+ * (z.B. wenn Windows das Fenster verschoben oder den Vollbild verlassen hat).
+ */
+export function refullscreenWindow(win: BrowserWindow, simulator: boolean): void {
+  if (simulator || win.isDestroyed()) return
+  const display = screen.getDisplayMatching(win.getBounds())
+  applyFullscreenWithRetries(win, display)
 }
 
 /** Zuordnung zur Laufzeit ändern (aus der Admin-UI). */
@@ -120,16 +154,21 @@ export function createPlayerWindows(config: AppConfig): PlayerWindows {
         backgroundColor: '#000000',
         skipTaskbar: true,
         autoHideMenuBar: true,
+        fullscreenable: true,
         webPreferences: {
           preload: path.join(__dirname, '../preload/index.js'),
           backgroundThrottling: false,
         },
       })
+      // Schon vor dem Anzeigen aufs Ziel-Display setzen, damit es dort erscheint
       win.setBounds(display.bounds)
-      win.setFullScreen(true)
-      win.setAlwaysOnTop(true, 'screen-saver')
       loadPlayer(win, role)
-      win.once('ready-to-show', () => win.show())
+      // Vollbild erst NACH dem Anzeigen erzwingen — auf Windows wird ein
+      // setFullScreen() vor show() sonst ignoriert.
+      win.once('ready-to-show', () => {
+        win.show()
+        applyFullscreenWithRetries(win, display)
+      })
       windows.set(role, win)
     })
   }

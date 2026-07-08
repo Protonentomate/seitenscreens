@@ -2,7 +2,7 @@ import { app, ipcMain, powerSaveBlocker, screen, type WebContents } from 'electr
 import { loadConfig } from './config'
 import { Store } from './store'
 import { registerMediaSchemePrivileges, registerMediaProtocol } from './media'
-import { createPlayerWindows, listDisplays, assignWindowToDisplay } from './windows'
+import { createPlayerWindows, listDisplays, assignWindowToDisplay, refullscreenWindow } from './windows'
 import { startApi, type WindowControl } from './api'
 import { MediaIndex } from './mediaIndex'
 import { ProjectorManager } from './projectors'
@@ -111,11 +111,8 @@ async function main(): Promise<void> {
     },
     refullscreen() {
       // Vollbild erneut erzwingen (falls z.B. Windows das Fenster verschoben hat)
-      for (const [role] of windows) {
-        const win = windows.get(role)
-        if (!win || win.isDestroyed() || simulator) continue
-        win.setFullScreen(true)
-        win.setAlwaysOnTop(true, 'screen-saver')
+      for (const [, win] of windows) {
+        if (!win.isDestroyed()) refullscreenWindow(win, simulator)
       }
     },
   }
