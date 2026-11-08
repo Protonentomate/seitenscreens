@@ -2,12 +2,12 @@ import { app, ipcMain, powerSaveBlocker, screen, type WebContents } from 'electr
 import { loadConfig } from './config'
 import { Store } from './store'
 import { registerMediaSchemePrivileges, registerMediaProtocol } from './media'
-import { createPlayerWindows, listDisplays, assignWindowToDisplay, refullscreenWindow } from './windows'
+import { PlayerWindows, listDisplays } from './windows'
 import { startApi, type WindowControl } from './api'
 import { MediaIndex } from './mediaIndex'
 import { ProjectorManager } from './projectors'
 import { IngestQueue } from './ingest'
-import type { WindowRole } from '../shared/screens'
+import { PreviewSprites } from './previews'
 
 // Muss vor app.whenReady() passieren
 registerMediaSchemePrivileges()
@@ -27,8 +27,16 @@ async function main(): Promise<void> {
 
   registerMediaProtocol(() => store.getConfig().mediaRoot)
 
-  const { windows, simulator } = createPlayerWindows(config)
+  // Displays zuerst kennen — der Store braucht sie, um Zuordnungen zu merken
+  store.setDisplays(listDisplays())
+  const players = new PlayerWindows(
+    config,
+    () => store.getConfig().windows,
+    (placement) => store.setWindowPlacement(placement),
+  )
+  const { windows, simulator } = players
   store.setSimulatorActive(simulator)
+  store.setWindowPlacement(players.getPlacement())
 
   // Zustand an alle Player-Fenster verteilen
   const subscribers = new Set<WebContents>()
@@ -90,18 +98,22 @@ async function main(): Promise<void> {
 
   powerSaveBlocker.start('prevent-display-sleep')
 
-  // Displays für die Admin-UI (Zuordnung Fenster ↔ physischer Ausgang)
-  store.setDisplays(listDisplays())
-  for (const event of ['display-added', 'display-removed', 'display-metrics-changed'] as const) {
-    screen.on(event as 'display-added', () => store.setDisplays(listDisplays()))
-  }
-  store.on('window-assignment', (role: WindowRole, displayId: number) => {
-    const win = windows.get(role)
-    if (win && !win.isDestroyed()) {
-      const result = assignWindowToDisplay(win, displayId, simulator)
-      if (!result.ok) console.warn('[windows]', result.error)
-    }
+  // Beamer ein-/ausgesteckt oder eingeschaltet → Displays neu einlesen und die
+  // Fenster neu platzieren. Entfernen sofort (sonst landet das Vollbild auf
+  // dem Hauptbildschirm), Hinzufügen/Umstellen entprellt, bis Windows fertig ist.
+  screen.on('display-removed', () => {
+    store.setDisplays(listDisplays())
+    players.relayout()
+    players.scheduleRelayout()
   })
+  for (const event of ['display-added', 'display-metrics-changed'] as const) {
+    screen.on(event as 'display-added', () => {
+      store.setDisplays(listDisplays())
+      players.scheduleRelayout()
+    })
+  }
+  // Zuordnung in der Verwaltung geändert (fest, getauscht, bestätigt, Import)
+  store.on('windows-changed', () => players.scheduleRelayout(0))
 
   const windowControl: WindowControl = {
     identify() {
@@ -111,15 +123,18 @@ async function main(): Promise<void> {
     },
     refullscreen() {
       // Vollbild erneut erzwingen (falls z.B. Windows das Fenster verschoben hat)
-      for (const [, win] of windows) {
-        if (!win.isDestroyed()) refullscreenWindow(win, simulator)
-      }
+      players.refullscreen()
     },
   }
 
   // Medien-Index: beobachtet den Nextcloud-Ordner, prüft Videos per ffprobe
   const index = new MediaIndex()
-  index.on('index', (snapshot) => store.setMediaIndex(snapshot))
+  // Hover-Vorschauen: fehlende (auch für alte Vorlagen) im Hintergrund rechnen
+  const previews = new PreviewSprites(() => store.getConfig().mediaRoot)
+  index.on('index', (snapshot) => {
+    store.setMediaIndex(snapshot)
+    previews.scheduleWarmup(snapshot)
+  })
   store.on('mediaroot-changed', (root: string) => void index.start(root))
   void index.start(config.mediaRoot)
 
@@ -137,7 +152,7 @@ async function main(): Promise<void> {
   store.restoreLastState()
 
   try {
-    await startApi(store, index, projectors, ingest, windowControl)
+    await startApi(store, index, projectors, ingest, windowControl, previews)
   } catch (err) {
     console.error('[api] Start fehlgeschlagen:', err)
   }

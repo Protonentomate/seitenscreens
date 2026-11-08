@@ -12,8 +12,10 @@ import type {
   ScreenContent,
   TemplateInfo,
   WallLayout,
+  WindowPlacement,
 } from '../shared/types'
-import { SCREEN_NAMES, type ScreenName, type WindowRole } from '../shared/screens'
+import { SCREEN_NAMES, WINDOW_ROLES, type ScreenName, type WindowRole } from '../shared/screens'
+import { hintFor } from '../shared/placement'
 import { saveConfig, configPath } from './config'
 import { ensureCached, clearCacheRegistry } from './cache'
 import { resolveMediaFile } from './media'
@@ -62,6 +64,10 @@ export class Store extends EventEmitter {
   private videoPausedAtMs: number | null = null
   private jobs: IngestJob[] = []
   private displays: DisplayInfo[] = []
+  private windowPlacement: Record<WindowRole, WindowPlacement> = {
+    links: { displayId: null, reason: 'missing' },
+    rechts: { displayId: null, reason: 'missing' },
+  }
   private calibrationFocus: AppState['calibrationFocus'] = null
   private mutationChain: Promise<unknown> = Promise.resolve()
   private configSaveTimer: NodeJS.Timeout | null = null
@@ -113,6 +119,7 @@ export class Store extends EventEmitter {
       layout: this.config.layout,
       displays: this.displays,
       windowSettings: this.config.windows,
+      windowPlacement: this.windowPlacement,
       calibrationFocus: this.calibrationFocus,
       defaultGroup: this.config.defaultGroup,
     }
@@ -159,6 +166,7 @@ export class Store extends EventEmitter {
       this.emit('mediaroot-changed', mediaRoot)
     }
     this.emit('projectors-changed', this.config.projectors)
+    this.emit('windows-changed')
     this.broadcast()
     return { mediaRootKept }
   }
@@ -174,11 +182,92 @@ export class Store extends EventEmitter {
     this.broadcast()
   }
 
-  /** Display-Zuordnung merken — das eigentliche Verschieben macht main/index. */
-  setWindowAssignment(role: WindowRole, displayId: number): void {
-    this.config.windows.assignments[role] = displayId
+  // --- Beamer-Fenster ↔ Displays (das Verschieben macht main/windows) ---
+
+  /**
+   * Feste Zuordnung setzen (displayId) oder aufheben (null = automatisch).
+   * Merkt sich Name/Auflösung/Position des Displays, damit es auch mit neuer
+   * ID wiedererkannt wird. Meldet 'windows-changed' → Fenster neu platzieren.
+   */
+  setWindowAssignment(role: WindowRole, displayId: number | null): void {
+    this.assign(role, displayId)
     saveConfig(this.config)
-    this.emit('window-assignment', role, displayId)
+    this.emit('windows-changed')
+    this.broadcast()
+  }
+
+  /** Aktuelle (automatische) Verteilung als feste Zuordnung übernehmen („Stimmt so"). */
+  confirmWindowPlacement(): void {
+    for (const role of WINDOW_ROLES) {
+      const id = this.windowPlacement[role].displayId
+      if (id !== null) this.assign(role, id)
+    }
+    saveConfig(this.config)
+    this.emit('windows-changed')
+    this.broadcast()
+  }
+
+  /** Links und rechts vertauschen (häufigster Fehler beim Anschliessen) und festhalten. */
+  swapWindows(): void {
+    const links = this.windowPlacement.links.displayId
+    const rechts = this.windowPlacement.rechts.displayId
+    // Erst beide lösen, sonst nimmt assign() dem anderen Fenster die ID weg
+    this.assign('links', null)
+    this.assign('rechts', null)
+    this.assign('links', rechts)
+    this.assign('rechts', links)
+    saveConfig(this.config)
+    this.emit('windows-changed')
+    this.broadcast()
+  }
+
+  setAvoidPrimary(on: boolean): void {
+    if (this.config.windows.avoidPrimary === on) return
+    this.config.windows.avoidPrimary = on
+    saveConfig(this.config)
+    this.emit('windows-changed')
+    this.broadcast()
+  }
+
+  private assign(role: WindowRole, displayId: number | null): void {
+    const w = this.config.windows
+    if (displayId === null) {
+      delete w.assignments[role]
+      delete w.assignmentHints[role]
+      return
+    }
+    // Ein Display gehört nur einem Fenster
+    for (const other of WINDOW_ROLES) {
+      if (other !== role && w.assignments[other] === displayId) {
+        delete w.assignments[other]
+        delete w.assignmentHints[other]
+      }
+    }
+    w.assignments[role] = displayId
+    const display = this.displays.find((d) => d.id === displayId)
+    if (display) w.assignmentHints[role] = hintFor(display)
+  }
+
+  /**
+   * Tatsächliche Platzierung von main/windows. Nebenbei: ein wiedererkanntes
+   * Display (neue ID) bekommt die neue ID fest zugeordnet, und Zuordnungen aus
+   * älteren Versionen (nur ID) bekommen ihre Wiedererkennungs-Merkmale.
+   */
+  setWindowPlacement(placement: Record<WindowRole, WindowPlacement>): void {
+    this.windowPlacement = placement
+    let dirty = false
+    for (const role of WINDOW_ROLES) {
+      const p = placement[role]
+      if (p.displayId === null) continue
+      const w = this.config.windows
+      if (p.reason === 'recognized' || (p.reason === 'assigned' && !w.assignmentHints[role])) {
+        const display = this.displays.find((d) => d.id === p.displayId)
+        w.assignments[role] = p.displayId
+        if (display) w.assignmentHints[role] = hintFor(display)
+        dirty = true
+      }
+    }
+    if (dirty) saveConfig(this.config)
     this.broadcast()
   }
 

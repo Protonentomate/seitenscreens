@@ -64,6 +64,58 @@ h2 {
   border: 1px solid #3c763d;
 }
 
+.banner.warn {
+  background: #4a3a1a;
+  border: 1px solid #f0ad4e;
+}
+
+.banner a {
+  color: #f5d08a;
+}
+
+.confirmbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.confirmbar > span:first-child {
+  flex: 1;
+  min-width: 260px;
+}
+
+.confirmbtns {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Kurze Meldungen schweben unten über dem Inhalt — nichts verrutscht */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 1000;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+.toast.error {
+  background: #5a2320;
+  border: 1px solid #a94442;
+}
+
+.toast.ok {
+  background: #1e4620;
+  border: 1px solid #3c763d;
+}
+
 .muted {
   color: #777;
 }

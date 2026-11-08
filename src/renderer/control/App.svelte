@@ -1,12 +1,15 @@
 <script lang="ts">
   import type { AppState, TemplateInfo } from '../../shared/types'
-  import { SCREEN_NAMES, type ScreenName } from '../../shared/screens'
+  import { SCREEN_NAMES, WINDOW_ROLES, type ScreenName } from '../../shared/screens'
+  import { placementNeedsConfirmation } from '../../shared/placement'
+  import { PREVIEW_FRAMES, PREVIEW_FPS } from '../../shared/preview'
   import {
     SHORT,
     apiBase,
     wsUrl,
     adminUrl,
     thumbUrl,
+    previewUrl,
     fmtTime,
     templateApplyPath,
     groupNames,
@@ -81,27 +84,59 @@
     state ? state.mediaIndex.singles.filter((s) => singleGroup(s.file) === (selectedGroup ?? '')) : [],
   )
 
+  // Erfolg braucht keine Meldung: die Karte zeigt „Aktiv" und „Live" wechselt.
+  // Nur Fehler erscheinen — als schwebende Meldung, ohne dass etwas verrutscht.
   async function applyTemplate(t: TemplateInfo): Promise<void> {
     const path = templateApplyPath(t)
     if (!t.complete) {
       if (!confirm(`„${t.name}" ist unvollständig (${t.warnings[0] ?? ''}).\nNur die vorhandenen Leinwände wechseln?`)) return
-      if (await api(`${path}?force=1`)) showBanner('ok', `„${t.name}" angewendet (teilweise)`)
+      await api(`${path}?force=1`)
       return
     }
-    if (await api(path)) showBanner('ok', `„${t.name}" angewendet`)
+    await api(path)
   }
 
   async function setSingle(file: string, screen: ScreenName | 'alle'): Promise<void> {
     const encoded = encodeURIComponent(file)
     if (screen === 'alle') {
       // Ein Batch-Aufruf → eine gemeinsame Epoche → Videos laufen synchron
-      if (await api(`/api/screens/set?file=${encoded}&screens=all`)) {
-        showBanner('ok', `${file} auf allen Leinwänden`)
-      }
+      await api(`/api/screens/set?file=${encoded}&screens=all`)
     } else {
-      if (await api(`/api/screen/${screen}/set?file=${encoded}`)) showBanner('ok', `${file} auf ${SHORT[screen]}`)
+      await api(`/api/screen/${screen}/set?file=${encoded}`)
     }
   }
+
+  const POWER_LABEL: Record<string, string> = { on: 'an', off: 'aus', unknown: '?', error: '!' }
+
+  // --- Vorschau beim Drüberfahren (Videos im Zeitraffer) ---
+  // Maus: abspielen, solange sie über den Bildern ist. Touch/Tastatur: antippen
+  // schaltet ein/aus (auf dem Handy gibt es kein Hover).
+  let previewKey = $state<string | null>(null)
+  const spriteStyle = `background-size:${PREVIEW_FRAMES * 100}% 100%;animation-duration:${PREVIEW_FRAMES / PREVIEW_FPS}s;animation-timing-function:steps(${PREVIEW_FRAMES}, jump-none)`
+  function previewEnter(e: PointerEvent, key: string): void {
+    if (e.pointerType === 'mouse') previewKey = key
+  }
+  function previewLeave(e: PointerEvent, key: string): void {
+    if (e.pointerType === 'mouse' && previewKey === key) previewKey = null
+  }
+  function previewTap(e: PointerEvent, key: string): void {
+    if (e.pointerType !== 'mouse') previewKey = previewKey === key ? null : key
+  }
+  function previewKeydown(e: KeyboardEvent, key: string): void {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      previewKey = previewKey === key ? null : key
+    }
+  }
+
+  // --- Beamer-Fenster: fehlt ein Beamer, oder ist die Verteilung unbestätigt? ---
+
+  const missingBeamers = $derived(
+    state && !state.simulator ? WINDOW_ROLES.filter((r) => state!.windowPlacement[r].reason === 'missing') : [],
+  )
+  const placementUnconfirmed = $derived(
+    state && !state.simulator ? placementNeedsConfirmation(state.windowPlacement) : false,
+  )
 
   // --- Video-Steuerung (global, ein Regler für alle Leinwände) ---
 
@@ -133,6 +168,19 @@
   }
 </script>
 
+<!-- Die 4 Leinwand-Bilder einer Vorlage; bei laufender Vorschau mit Filmstreifen -->
+{#snippet templateTiles(t: TemplateInfo)}
+  {#each SCREEN_NAMES as screen (screen)}
+    {@const f = t.files[screen]}
+    <div class="thumb" class:missing={!f}>
+      {#if f}<img src={thumbUrl(f)} alt={SHORT[screen]} loading="lazy" />{/if}
+      {#if f?.kind === 'video' && previewKey === t.ref}
+        <div class="sprite" style="background-image:url('{previewUrl(f.file)}');{spriteStyle}"></div>
+      {/if}
+    </div>
+  {/each}
+{/snippet}
+
 <main>
   <header>
     <h1>Seitenscreens</h1>
@@ -142,7 +190,7 @@
   </header>
 
   {#if banner}
-    <div class="banner {banner.kind}">{banner.text}</div>
+    <div class="toast {banner.kind}" role="status">{banner.text}</div>
   {/if}
 
   {#if !state}
@@ -152,6 +200,27 @@
       <div class="banner error">
         Medienordner nicht gefunden{state.mediaRoot ? `: ${state.mediaRoot}` : ' (nicht konfiguriert)'} — in der
         „Verwaltung" den Pfad zum Nextcloud-Ordner „_Vorlagen" setzen.
+      </div>
+    {/if}
+
+    {#if missingBeamers.length > 0}
+      <div class="banner warn">
+        {missingBeamers.length === 2 ? 'Keine Beamer erkannt' : `Beamer ${missingBeamers[0]} nicht erkannt`} —
+        {missingBeamers.length === 2 ? 'die Fenster erscheinen' : 'das Fenster erscheint'} automatisch, sobald der Beamer
+        angeschlossen bzw. eingeschaltet ist. <a href={`${adminUrl}#anzeige`}>Anzeige prüfen</a>
+      </div>
+    {/if}
+    {#if placementUnconfirmed}
+      <div class="banner warn confirmbar">
+        <span>
+          Die Beamer-Fenster wurden automatisch verteilt. Stimmen links und rechts? Auf den Leinwänden steht kurz
+          „links" bzw. „rechts".
+        </span>
+        <span class="confirmbtns">
+          <button class="mini primary" onclick={() => api('/api/display/confirm')}>Ja, stimmt</button>
+          <button class="mini" onclick={() => api('/api/display/swap')}>Links ↔ rechts tauschen</button>
+          <button class="mini" onclick={() => api('/api/display/identify')}>Nochmals anzeigen</button>
+        </span>
       </div>
     {/if}
 
@@ -170,34 +239,38 @@
       {#each state.projectors as p (p.id)}
         <div class="projector" title={p.lastMessage || p.host}>
           <span class="pname">{p.name}</span>
-          <span class="pstate {p.power}">{p.power === 'unknown' ? '?' : p.power === 'error' ? '!' : p.power}</span>
+          <span class="pstate {p.power}">{POWER_LABEL[p.power] ?? p.power}</span>
           <button onclick={() => api(`/api/projector/${p.id}/on`)}>Ein</button>
           <button onclick={() => api(`/api/projector/${p.id}/off`)}>Aus</button>
         </div>
       {/each}
     </section>
 
-    {#if videoContents.length > 0 && videoDuration > 0}
-      <section class="videobar">
-        <button class="big" onclick={() => api('/api/video/toggle')}>
-          {state.videoPaused ? '▶ Weiter' : '⏸ Pause'}
-        </button>
-        <input
-          class="seek"
-          type="range"
-          min="0"
-          max={videoDuration}
-          step="0.05"
-          bind:value={videoPosition}
-          onpointerdown={() => (sliderDragging = true)}
-          onchange={() => {
-            void seekTo(videoPosition)
-            sliderDragging = false
-          }}
-        />
-        <span class="vtime">{fmtTime(videoPosition)} / {fmtTime(videoDuration)}</span>
-      </section>
-    {/if}
+    <!-- Immer da (ohne Video nur ausgegraut): sonst springt die ganze Seite,
+         sobald man zwischen Bild- und Video-Vorlagen wechselt -->
+    {@const hasLiveVideo = videoContents.length > 0 && videoDuration > 0}
+    <section class="videobar" class:idle={!hasLiveVideo}>
+      <button class="big" disabled={!hasLiveVideo} onclick={() => api('/api/video/toggle')}>
+        {state.videoPaused && hasLiveVideo ? '▶ Weiter' : '⏸ Pause'}
+      </button>
+      <input
+        class="seek"
+        type="range"
+        min="0"
+        max={hasLiveVideo ? videoDuration : 1}
+        step="0.05"
+        disabled={!hasLiveVideo}
+        bind:value={videoPosition}
+        onpointerdown={() => (sliderDragging = true)}
+        onchange={() => {
+          void seekTo(videoPosition)
+          sliderDragging = false
+        }}
+      />
+      <span class="vtime">
+        {hasLiveVideo ? `${fmtTime(videoPosition)} / ${fmtTime(videoDuration)}` : 'Kein Video live'}
+      </span>
+    </section>
 
     <section>
       <h2>Live {state.activeTemplate ? `— ${state.activeTemplate}` : ''}</h2>
@@ -234,15 +307,25 @@
       {/if}
       <div class="grid">
         {#each visibleTemplates as t (t.ref)}
+          {@const hasVideo = SCREEN_NAMES.some((sc) => t.files[sc]?.kind === 'video')}
           <div class="card" class:current={state.activeTemplate === t.ref}>
-            <div class="thumbs">
-              {#each SCREEN_NAMES as screen (screen)}
-                {@const f = t.files[screen]}
-                <div class="thumb" class:missing={!f}>
-                  {#if f}<img src={thumbUrl(f)} alt={SHORT[screen]} loading="lazy" />{/if}
-                </div>
-              {/each}
-            </div>
+            {#if hasVideo}
+              <div
+                class="thumbs previewable"
+                role="button"
+                tabindex="0"
+                aria-label={`Vorschau ${t.name}`}
+                title="Maus drüber (oder antippen) = Vorschau im Zeitraffer"
+                onpointerenter={(e) => previewEnter(e, t.ref)}
+                onpointerleave={(e) => previewLeave(e, t.ref)}
+                onpointerup={(e) => previewTap(e, t.ref)}
+                onkeydown={(e) => previewKeydown(e, t.ref)}
+              >
+                {@render templateTiles(t)}
+              </div>
+            {:else}
+              <div class="thumbs">{@render templateTiles(t)}</div>
+            {/if}
             <div class="cardfoot">
               <span class="tname" title={t.ref}>{t.name}</span>
               {#if t.warnings.length > 0}
@@ -265,7 +348,26 @@
       <div class="grid singles">
         {#each visibleSingles as s (s.file)}
           <div class="card">
-            <div class="singlethumb"><img src={thumbUrl(s)} alt={s.file} loading="lazy" /></div>
+            {#if s.kind === 'video'}
+              <div
+                class="singlethumb previewable"
+                role="button"
+                tabindex="0"
+                aria-label={`Vorschau ${s.file}`}
+                title="Maus drüber (oder antippen) = Vorschau im Zeitraffer"
+                onpointerenter={(e) => previewEnter(e, s.file)}
+                onpointerleave={(e) => previewLeave(e, s.file)}
+                onpointerup={(e) => previewTap(e, s.file)}
+                onkeydown={(e) => previewKeydown(e, s.file)}
+              >
+                <img src={thumbUrl(s)} alt={s.file} loading="lazy" />
+                {#if previewKey === s.file}
+                  <div class="sprite" style="background-image:url('{previewUrl(s.file)}');{spriteStyle}"></div>
+                {/if}
+              </div>
+            {:else}
+              <div class="singlethumb"><img src={thumbUrl(s)} alt={s.file} loading="lazy" /></div>
+            {/if}
             <div class="cardfoot">
               <span class="tname" title={s.file}>{s.file}</span>
             </div>
@@ -311,6 +413,13 @@
   .seek {
     flex: 1;
     accent-color: #3a6fc4;
+  }
+  .videobar.idle {
+    opacity: 0.45;
+  }
+  .videobar button:disabled,
+  .videobar input:disabled {
+    cursor: default;
   }
   .vtime {
     font-size: 13px;
@@ -397,6 +506,31 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     flex: 1;
+  }
+
+  /* Hover-Vorschau: Filmstreifen über dem Standbild, per steps() durchgeblättert */
+  .previewable {
+    cursor: zoom-in;
+  }
+  .thumb,
+  .singlethumb {
+    position: relative;
+  }
+  .sprite {
+    position: absolute;
+    inset: 0;
+    background-repeat: no-repeat;
+    background-position: 0 0;
+    animation-name: filmstrip;
+    animation-iteration-count: infinite;
+  }
+  @keyframes filmstrip {
+    from {
+      background-position: 0% 0;
+    }
+    to {
+      background-position: 100% 0;
+    }
   }
 
   .singles .singlethumb {

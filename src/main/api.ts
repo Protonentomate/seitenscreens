@@ -13,8 +13,9 @@ import { pipeline } from 'node:stream/promises'
 import type { Store } from './store'
 import { kindForFile } from './store'
 import type { MediaIndex } from './mediaIndex'
-import type { ProjectorManager } from './projectors'
+import { diagnoseProjector, type ProjectorManager } from './projectors'
 import type { IngestQueue, IngestSource } from './ingest'
+import type { PreviewSprites } from './previews'
 import { resolveMediaFile, openFileStream, isServableMedia } from './media'
 import { isScreenName, SCREEN_NAMES, WINDOW_ROLES, type ScreenName, type WindowRole } from '../shared/screens'
 import type { AppConfig, MediaFileInfo, IngestFit, IngestMode, Quad, SpanGaps } from '../shared/types'
@@ -44,6 +45,7 @@ export async function startApi(
   projectors: ProjectorManager,
   ingest: IngestQueue,
   windowControl: WindowControl,
+  previews: PreviewSprites,
 ): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
   // Im Dev-Modus läuft die UI auf dem Vite-Port (5173), die API auf 8080 —
@@ -330,6 +332,12 @@ export async function startApi(
     url: '/api/projector/:id/:action',
     handler: async (req, reply) => {
       const { id, action } = req.params as { id: string; action: string }
+      // Diagnose für die Fehlersuche vor Ort: Webinterface + PJLink abfragen
+      if (action === 'diagnose') {
+        const cfg = store.getConfig().projectors.find((p) => p.id === id)
+        if (!cfg) return reply.status(404).send({ ok: false, error: `Unbekannter Beamer: ${id}` })
+        return { ok: true, diagnose: await diagnoseProjector(cfg.host) }
+      }
       const result = await projectorAction(id, action)
       if (result.error) return reply.status(result.status).send({ ok: false, error: result.error })
       return ok()
@@ -386,15 +394,52 @@ export async function startApi(
 
   app.post('/api/display/assign', async (req, reply) => {
     const body = req.body as { window?: string; displayId?: unknown } | null
-    const displayId = Number(body?.displayId)
-    if (!body?.window || !isWindowRole(body.window) || !Number.isFinite(displayId)) {
+    if (!body?.window || !isWindowRole(body.window)) {
       return reply.status(400).send({ ok: false, error: 'window (links|rechts) + displayId erwartet' })
+    }
+    // displayId null/'auto' = feste Zuordnung aufheben, wieder automatisch verteilen
+    if (body.displayId === null || body.displayId === 'auto') {
+      store.setWindowAssignment(body.window, null)
+      return ok()
+    }
+    const displayId = Number(body.displayId)
+    if (!Number.isFinite(displayId)) {
+      return reply.status(400).send({ ok: false, error: 'displayId muss eine Display-ID, null oder "auto" sein' })
     }
     const exists = store.snapshot().displays.some((d) => d.id === displayId)
     if (!exists) {
       return reply.status(404).send({ ok: false, error: `Display ${displayId} nicht gefunden` })
     }
     store.setWindowAssignment(body.window, displayId)
+    return ok()
+  })
+
+  // Links/rechts vertauschen bzw. die automatische Verteilung bestätigen —
+  // auch als GET, damit ein Stream-Deck-Knopf es auslösen kann
+  app.route({
+    method: ['GET', 'POST'],
+    url: '/api/display/swap',
+    handler: async () => {
+      store.swapWindows()
+      return ok()
+    },
+  })
+
+  app.route({
+    method: ['GET', 'POST'],
+    url: '/api/display/confirm',
+    handler: async () => {
+      store.confirmWindowPlacement()
+      return ok()
+    },
+  })
+
+  app.post('/api/display/settings', async (req, reply) => {
+    const body = req.body as { avoidPrimary?: unknown } | null
+    if (typeof body?.avoidPrimary !== 'boolean') {
+      return reply.status(400).send({ ok: false, error: 'avoidPrimary (true|false) erwartet' })
+    }
+    store.setAvoidPrimary(body.avoidPrimary)
     return ok()
   })
 
@@ -878,6 +923,29 @@ export async function startApi(
     reply.header('X-Content-Type-Options', 'nosniff')
     reply.header('Cache-Control', 'max-age=86400')
     return reply.send(fs.createReadStream(thumbPath))
+  })
+
+  /**
+   * Hover-Vorschau eines Videos: Filmstreifen aus PREVIEW_FRAMES Bildern
+   * (siehe shared/preview.ts). ETag = Datei-Version, damit eine in Nextcloud
+   * ersetzte Datei sofort die neue Vorschau bekommt.
+   */
+  app.get('/previews/*', async (req, reply) => {
+    const rel = (req.params as Record<string, string>)['*'] ?? ''
+    if (kindForFile(rel) !== 'video') return reply.status(404).send({ ok: false, error: 'Kein Video' })
+    const snap = index.getSnapshot()
+    const info =
+      snap.singles.find((s) => s.file === rel) ??
+      snap.templates.flatMap((t) => Object.values(t.files)).find((f) => f?.file === rel) ?? { file: rel }
+    const result = await previews.ensure(info)
+    if (!result) return reply.status(404).send({ ok: false, error: 'Keine Vorschau möglich' })
+    const etag = `"${result.key}"`
+    reply.header('ETag', etag)
+    reply.header('Cache-Control', 'no-cache')
+    if (req.headers['if-none-match'] === etag) return reply.status(304).send()
+    reply.header('Content-Type', 'image/jpeg')
+    reply.header('X-Content-Type-Options', 'nosniff')
+    return reply.send(fs.createReadStream(result.path))
   })
 
   // --- Quadratische Button-Icons fürs Stream Deck ---

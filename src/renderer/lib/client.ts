@@ -30,6 +30,11 @@ export function thumbUrl(info: MediaFileInfo | { file: string; kind: string }): 
   return mediaUrl(info.file)
 }
 
+/** Filmstreifen für die Hover-Vorschau eines Videos (siehe shared/preview.ts). */
+export function previewUrl(file: string): string {
+  return `${apiBase}/previews/${file.split('/').map(encodeURIComponent).join('/')}`
+}
+
 export function fmtTime(s: number): string {
   const m = Math.floor(s / 60)
   const sec = Math.floor(s % 60)

@@ -30,11 +30,15 @@ siehe [INSTALLATION-KURZ.md](INSTALLATION-KURZ.md).
 
 ```bat
 cd C:\
-git clone <repo-url> seitenscreens   REM oder Ordner vom Mac kopieren
-cd seitenscreens
-npm install
-npm run build
+git clone https://github.com/Protonentomate/seitenscreens seitenscreens
 ```
+
+Dann `scripts\windows\Desktop-Verknuepfung erstellen.bat` doppelklicken und
+über das neue Desktop-Icon starten — `npm install` und der Build passieren
+beim ersten Start automatisch (und nach jedem Update wieder, siehe
+[INSTALLATION-KURZ.md](INSTALLATION-KURZ.md), Abschnitt 6). Ohne Git: den
+Ordner als ZIP von GitHub laden und entpacken; `Aktualisieren.bat` holt
+spätere Updates dann ebenfalls als ZIP.
 
 ## 3. Erststart & Einrichtung
 
@@ -59,11 +63,15 @@ npm start
    Mittelabstand über der Bühne (der lässt sich aus der Kalibrierung nicht
    ableiten). Nach dem Ändern: Tab „Inhalte" → „Alle Span-Vorlagen neu rechnen".
 4. Beamer-IPs prüfen (Standard: links 192.168.100.95, rechts 192.168.100.96).
-5. **`/admin` → Tab „Anzeige"**: pro Beamer-Fenster das physische Display
-   (HDMI/DisplayPort-Ausgang) wählen — „Fenster identifizieren" blendet 4 s
-   gross links/rechts ein. Kopfüber montierte Beamer um 180° drehen.
-   Kein Fenster-Verschieben von Hand mehr nötig; die Zuordnung wird
-   gespeichert und beim Start berücksichtigt.
+5. **Beamer-Fenster prüfen:** Beim ersten Start verteilt die App die Fenster
+   automatisch auf die Beamer (von links nach rechts, nie auf den
+   Hauptbildschirm) und fragt oben in der Steuerung, ob links/rechts stimmen
+   → „Ja, stimmt" oder „Links ↔ rechts tauschen". Feiner unter **`/admin` →
+   Tab „Anzeige"**: pro Beamer-Fenster das physische Display wählen
+   („Fenster identifizieren" blendet 4 s gross links/rechts ein), kopfüber
+   montierte Beamer um 180° drehen. Die Zuordnung wird gespeichert; ein
+   Beamer, der beim Start noch fehlt, bekommt sein Fenster, sobald er
+   angeschlossen bzw. eingeschaltet ist.
 6. Kalibrierung: kommt aus dem OBS-Import und lässt sich unter
    **`/admin` → Tab „Kalibrierung"** direkt nachjustieren (Ecken ziehen,
    Pfeiltasten = 1 px, Shift = 10 px, Alt = 0,1 px; Änderungen erscheinen
@@ -177,7 +185,9 @@ Das alte Setup bleibt installiert. Falls nötig:
 | „Medienordner nicht gefunden" | Nextcloud fertig gesynct? Pfad in Einstellungen korrekt? |
 | Video spielt nicht / Warnung ⚠ | Badge-Text lesen: kaputte Datei, 60 fps oder falscher Codec → über die Verwaltung neu hochladen (`/admin` → Hochladen) |
 | Videos ruckeln | `/api/health` → `tools` ok? Hardware-Decode-Check kommt mit M6-Preflight |
-| Beamer „!" | IP korrekt? Beamer im selben Netz? Webinterface `http://<beamer-ip>` erreichbar? |
-| Bild auf falschem Beamer | `/admin` → Tab „Anzeige" → Displays zuordnen („Fenster identifizieren" hilft) |
+| Beamer „!" oder „?" | IP korrekt? Beamer im selben Netz? `/admin` → „Einstellungen" → „Verbindung testen" zeigt, was Webinterface und PJLink antworten. „?" nach dem Einschalten = keine Antwort innert 4 s (Befehl evtl. trotzdem angekommen) |
+| Bild auf falschem Beamer | Steuerung oben: „Links ↔ rechts tauschen", oder `/admin` → Tab „Anzeige" → Displays zuordnen („Fenster identifizieren" hilft) |
+| Beamer-Fenster fehlt | Steuerung zeigt „Beamer … nicht erkannt": Beamer einschalten/Kabel prüfen — das Fenster erscheint dann von selbst. Erkennt Windows den Beamer (Einstellungen → Anzeige)? |
+| Nach Update alte Oberfläche/Funktionen | App beenden und neu starten — der Start baut automatisch neu. Notfalls `node scripts\ensure-build.mjs` im Projektordner |
 | Fenster nicht im Vollbild | Sollte automatisch passieren; falls Windows es verschiebt: `/admin` → Tab „Anzeige" → „Vollbild erzwingen". Notfalls im Fenster F11 drücken. |
 | `Error: Electron uninstall` beim Start | Electron-Programmdatei wurde nicht geladen (Binary-Download beim `npm install` fehlgeschlagen oder `node_modules` von einem anderen Rechner kopiert). Nachladen: `node node_modules\electron\install.js`. Das Startskript macht das ab sofort automatisch. |

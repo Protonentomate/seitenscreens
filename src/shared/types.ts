@@ -60,12 +60,46 @@ export interface WallLayout {
  */
 export type SpanGaps = 'exact' | 'exact-nomid' | 'none'
 
+/**
+ * Merkmale eines Displays, an denen es sich wiedererkennen lässt, falls
+ * Windows ihm nach dem Aus-/Einstecken eine neue ID gibt.
+ */
+export interface DisplayHint {
+  label: string
+  width: number
+  height: number
+  /** Position (x) zum Zeitpunkt der Zuordnung — trennt baugleiche Beamer. */
+  x: number
+}
+
 /** Zuordnung der Beamer-Fenster zu physischen Displays + Ausgabe-Drehung. */
 export interface WindowSettings {
-  /** Electron-Display-ID pro Fenster; fehlt sie, gilt die Reihenfolge nach x. */
+  /** Electron-Display-ID pro Fenster (fest zugeordnet); fehlt sie, wird automatisch verteilt. */
   assignments: Partial<Record<WindowRole, number>>
+  /** Merkmale der fest zugeordneten Displays (Wiedererkennung bei neuer ID). */
+  assignmentHints: Partial<Record<WindowRole, DisplayHint>>
   /** 180° für kopfüber montierte Beamer (90/270 würde das Seitenformat brechen). */
   rotation: Partial<Record<WindowRole, 0 | 180>>
+  /**
+   * Hauptbildschirm (Windows-Primärdisplay = Bediener-Monitor) nie automatisch
+   * für ein Beamer-Fenster verwenden. Aus nur für PCs ohne eigenen Monitor.
+   */
+  avoidPrimary: boolean
+}
+
+/**
+ * Wie ein Beamer-Fenster gerade platziert ist:
+ * 'assigned'   = fest zugeordnetes Display (aus der Verwaltung bestätigt),
+ * 'recognized' = fest zugeordnetes Display, an Name/Grösse wiedererkannt (neue ID),
+ * 'auto'       = automatisch verteilt (noch nicht bestätigt),
+ * 'missing'    = kein passendes Display angeschlossen — Fenster wartet versteckt,
+ * 'simulator'  = Entwicklungs-Modus mit Vorschau-Fenstern.
+ */
+export type PlacementReason = 'assigned' | 'recognized' | 'auto' | 'missing' | 'simulator'
+
+export interface WindowPlacement {
+  displayId: number | null
+  reason: PlacementReason
 }
 
 /** Physisches Display, wie Electron es sieht (für die Zuordnung in der Admin-UI). */
@@ -213,6 +247,8 @@ export interface AppState {
   /** Angeschlossene Displays (für die Zuordnung in der Admin-UI). */
   displays: DisplayInfo[]
   windowSettings: WindowSettings
+  /** Wo die beiden Beamer-Fenster gerade wirklich stehen (oder ob sie warten). */
+  windowPlacement: Record<WindowRole, WindowPlacement>
   defaultGroup: string
   /**
    * Gerade bearbeitete Ecke in der Kalibrier-UI — der Player markiert sie

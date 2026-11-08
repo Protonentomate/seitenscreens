@@ -1,16 +1,6 @@
 @echo off
-setlocal
-rem Legt eine Verknuepfung "Seitenscreens" (mit Icon) auf dem Desktop an.
-set "ROOT=%~dp0..\.."
-for %%I in ("%ROOT%") do set "ROOT=%%~fI"
-set "TARGET=%~dp0Seitenscreens starten.bat"
-set "ICON=%ROOT%\build\icon.ico"
-
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws=New-Object -ComObject WScript.Shell; $lnk=$ws.CreateShortcut([Environment]::GetFolderPath('Desktop')+'\Seitenscreens.lnk'); $lnk.TargetPath='%TARGET%'; $lnk.WorkingDirectory='%ROOT%'; $lnk.IconLocation='%ICON%'; $lnk.Description='Seitenscreens Projektion starten'; $lnk.Save()"
-
-if errorlevel 1 (
-  echo Konnte die Verknuepfung nicht anlegen.
-) else (
-  echo Verknuepfung "Seitenscreens" liegt jetzt auf dem Desktop.
-)
+rem Legt die Verknuepfung "Seitenscreens" (mit Icon) auf dem Desktop, im
+rem Startmenue und im Projektordner an. Die Verknuepfung kann man danach
+rem beliebig kopieren - sie zeigt immer auf diesen Projektordner.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0verknuepfungen.ps1"
 pause

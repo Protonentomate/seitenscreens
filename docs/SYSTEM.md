@@ -148,6 +148,11 @@ Referenz-ffmpeg-Flags: `-c:v libx264 -preset veryfast -crf 18 -profile:v high
   Vorlage. Die Dateien reisen unter den Feldnamen
   `fileLinksLinks`/`fileLinksRechts`/`fileRechtsLinks`/`fileRechtsRechts`
   (Einpassung je `fitLinksLinks` usw.).
+- **Standard im Formular** (seit November 2026): „Über alle 4 spannen" +
+  „Korrekt, Mitte direkt" (`exact-nomid`) + „Strecken" — das ganze Motiv ist
+  zu sehen, in der Mitte fehlt nichts Grosses, die äusseren Abstände stimmen.
+  Die API selbst bleibt bei ihren Standardwerten (`fit=contain`,
+  `gaps=exact`; `mode` ist Pflicht), damit bestehende Skripte gleich rechnen.
 - **Einpassen**: `contain` (Einpassen), `cover` (Füllen), **`stretch`**
   (Strecken — verzerrt auf die volle Fläche).
 - **Übergang zwischen den Leinwänden** (nur `span`/`span2`, Feld `gaps`, in
@@ -221,6 +226,11 @@ Leinwand liegen — wird verweigert. Endpunkt: `POST /api/trash`, Body
   den entsprechend versetzten Bildausschnitt. Muss wie die Abstände in der
   Kirche ausgemessen werden (aktuell Platzhalter 0).
 - `transitionMs`, `server.port`, `simulator`, `projectors` (IPs + Treiber)
+- `windows` — Beamer-Fenster ↔ Displays: `assignments` (feste Display-ID je
+  Fenster), `assignmentHints` (Name/Auflösung/Position zur Wiedererkennung),
+  `rotation` (0/180), `avoidPrimary` (Hauptbildschirm nie automatisch, Standard
+  an). Gesetzt über `/admin` → „Anzeige" bzw. „Ja, stimmt" / „Links ↔ rechts
+  tauschen" in der Steuerung.
 
 **StreamFX-Import**: `npm run import-streamfx` konvertiert die Corner-Pin-Werte
 aus einem OBS-Export. Formel (am StreamFX-Quellcode verifiziert):
@@ -282,7 +292,34 @@ HD 630, Kaltstart-Budget ≤ 60 s.
 - **Rollback**: Das alte OBS-Setup bleibt auf dem Beamer-PC installiert
   (Autostart deaktiviert), bis 4–6 Gottesdienste fehlerfrei liefen.
 - Beamer-Status ist optimistisch (HTTP 200 = geschaltet); die Webinterfaces
-  liefern keinen sauberen Status. Bei Bedarf später Status-Polling ergänzen.
+  liefern keinen sauberen Status. Eine Zeitüberschreitung (4 s) zeigt „?"
+  statt „!" (der Befehl kann trotzdem angekommen sein). Jede Antwort wird
+  geloggt (`[projector] …`); `GET /api/projector/{id}/diagnose` bzw.
+  „Verbindung testen" in den Einstellungen fragt Webinterface und PJLink ab —
+  Grundlage, um vor Ort eine echte Status-Abfrage einzubauen (docs/TODO.md).
+- **Beamer-Fenster ↔ Displays** (`src/shared/placement.ts`, getestet): bei
+  jedem Start und bei jedem Display-Event (Beamer ein-/ausgesteckt oder
+  eingeschaltet; Hinzufügen entprellt 1 s, Entfernen sofort) neu geplant:
+  feste Zuordnung per ID → Wiedererkennung an Name/Auflösung/Position
+  (`assignmentHints`, falls Windows eine neue ID vergibt) → automatisch von
+  links nach rechts ohne Hauptbildschirm (`avoidPrimary`) → sonst wartet das
+  Fenster versteckt. Wird ein Fenster automatisch (neu) platziert, blendet
+  es „links"/„rechts" ein, und die Steuerung fragt nach einer Bestätigung.
+  `simulator.enabled: 'auto'` simuliert nur noch auf macOS — früher schaltete
+  Windows mit nur einem Display beim Start dauerhaft in den Simulator.
+- **Hover-Vorschau** (`src/main/previews.ts`): pro Video ein JPEG-Filmstreifen
+  aus 20 Bildern (108×192, gleichmässig über die Loop), per CSS `steps()` im
+  Zeitraffer abgespielt. Cache in `userData/previews`, Schlüssel =
+  Datei-Version; fehlende entstehen beim ersten Hover und im Hintergrund nach
+  jedem Index-Update (ffmpeg mit niedrigster Priorität, 1 Thread, max. 2
+  parallel), veraltete werden gelöscht. Formatänderung → `FORMAT_VERSION`
+  erhöhen, dann rechnet die App alle neu.
+- **Updates**: `scripts/ensure-build.mjs` (vom Startskript aufgerufen)
+  installiert neu, wenn sich `package-lock.json` geändert hat, und baut neu,
+  wenn sich `src/` oder die Build-Konfiguration geändert hat (Prüfsummen in
+  `node_modules/.seitenscreens-deps` und `out/.build-stamp`). Config-Migration
+  passiert in `mergeWithDefaults` (neue Felder bekommen Standardwerte, alte
+  bleiben). Ablauf für Anwender: docs/INSTALLATION-KURZ.md, Abschnitt 6.
 - Port 8080 belegt → App loggt Fehler, Player läuft weiter (Steuerung dann
   nicht erreichbar). Port ist in der Config änderbar.
 - 17 Review-Findings aus dem M3-Review blieben unverifiziert (Session-Limit);

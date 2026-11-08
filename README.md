@@ -10,9 +10,10 @@ ein Stream Deck bedient.
 
 **Weitere Doku:**
 - [docs/SYSTEM.md](docs/SYSTEM.md) — Anforderungen, Architektur, Entscheidungen, Medien-Konventionen
-- [docs/INSTALLATION-KURZ.md](docs/INSTALLATION-KURZ.md) — Schnellversion: Desktop-Icon & Autostart per Doppelklick (`scripts/windows/`)
+- [docs/INSTALLATION-KURZ.md](docs/INSTALLATION-KURZ.md) — Schnellversion: Desktop-Icon, Autostart und **Update** per Doppelklick (`scripts/windows/`)
 - [docs/INSTALLATION-WINDOWS.md](docs/INSTALLATION-WINDOWS.md) — Installation & Betrieb auf dem Beamer-PC (ausführlich)
 - [docs/STREAMDECK.md](docs/STREAMDECK.md) — Stream Deck verbinden (URLs, Gruppen, Vorschau-Bilder auf den Knöpfen)
+- [docs/TODO.md](docs/TODO.md) — Offene Punkte (Bedienungsanleitung, Beamer-Status vor Ort, …)
 
 ## Schnellstart (Entwicklung, macOS/Windows)
 
@@ -86,6 +87,8 @@ Die POST-Endpunkte am Tabellenende sind primär für die Admin-UI gedacht.
 | `GET /api/state`, `/api/health`, `/api/templates` | Zustand, Diagnose, Medienliste |
 | `GET /api/button/{Name}` | Quadratisches Knopf-Icon der Vorlage (Standard 144×144 JPEG; `?size=`, `?format=png`), direkt als Stream-Deck-Knopfbild nutzbar |
 | `GET /api/button/{Gruppe}/{Name}` | Knopf-Icon einer Vorlage aus einer bestimmten Gruppe |
+| `GET /previews/{Datei}` | Filmstreifen (20 Bilder) eines Videos für die Hover-Vorschau |
+| `GET /api/projector/{links\|rechts}/diagnose` | Webinterface und PJLink-Status des Beamers abfragen (ändert nichts) |
 | `POST /api/upload` | Multipart-Upload: `mode` = `single`\|`clone`\|`span`\|`span2`\|`quad`, `fit` = `contain`\|`cover`\|`stretch`, `gaps` = `exact`\|`exact-nomid`\|`none` (Übergang beim Spannen; `exact-nomid` = Mitte über der Bühne ohne Abstand, nur „über alle 4"), `mirrorLeft`/`mirrorRight` = `1`\|`0` (nur span2: linke/rechte Seite spiegeln), `group` = Gruppen-Ordner (optional). Bei `mode=quad` je eine Datei pro Leinwand über die Feldnamen `fileLinksLinks`/`fileLinksRechts`/`fileRechtsLinks`/`fileRechtsRechts` mit eigener Einpassung `fitLinksLinks` usw. `loopSmooth` = `1`\|`0` (Video-Loop weich überblenden), `loopCrossfadeS` = Überblendungsdauer in s (Standard 0,5) |
 | `POST /api/template/{Name}/rerender` | Vorlage aus gesichertem Original + `_meta.json` neu rechnen (z.B. nach geänderten Wand-Massen) |
 | `POST /api/template/{Gruppe}/{Name}/rerender` | dasselbe für eine Vorlage in einer Gruppe |
@@ -93,7 +96,10 @@ Die POST-Endpunkte am Tabellenende sind primär für die Admin-UI gedacht.
 | `POST /api/trash` | In den Papierkorb (`_Papierkorb/` im Medienordner) verschieben, Body `{type:'template', ref}` oder `{type:'single', file}` |
 | `POST /api/calibration/{Screen}` | Leinwand-Ecken setzen, Body `{corners:{tl:{x,y},tr,br,bl}}` |
 | `POST /api/calibration/focus` | Ecke auf der Leinwand magenta markieren, Body `{screen,corner}` (`{}` löscht die Markierung) |
-| `POST /api/display/assign` | Beamer-Fenster einem Display zuordnen, Body `{window:'links'\|'rechts', displayId}` |
+| `POST /api/display/assign` | Beamer-Fenster einem Display fest zuordnen, Body `{window:'links'\|'rechts', displayId}` (`displayId: 'auto'` = wieder automatisch) |
+| `GET\|POST /api/display/swap` | Links und rechts vertauschen und festhalten |
+| `GET\|POST /api/display/confirm` | Automatische Verteilung als feste Zuordnung übernehmen („Ja, stimmt") |
+| `POST /api/display/settings` | `{avoidPrimary: true\|false}` — Hauptbildschirm nie automatisch für einen Beamer |
 | `POST /api/display/rotation` | Ausgabe um 180° drehen, Body `{window, deg:0\|180}` |
 | `GET\|POST /api/display/identify` | Fenster-Kennung 4 s gross einblenden (links/rechts) |
 | `POST /api/display/refullscreen` | Vollbild auf den Beamer-Fenstern erzwingen |

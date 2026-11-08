@@ -59,7 +59,7 @@ export function defaultConfig(): AppConfig {
       gapsMm: [1350, 4000, 1410],
       yOffsetsMm: [340, 0, 0, 300],
     },
-    windows: { assignments: {}, rotation: {} },
+    windows: { assignments: {}, assignmentHints: {}, rotation: {}, avoidPrimary: true },
     defaultGroup: '',
   }
 }
@@ -74,9 +74,13 @@ export function mergeWithDefaults(loaded: Partial<AppConfig>): AppConfig {
     screens: { ...def.screens, ...(loaded.screens ?? {}) },
     projectors: loaded.projectors ?? def.projectors,
     layout: { ...def.layout, ...(loaded.layout ?? {}) },
+    // Ältere Configs kennen assignmentHints/avoidPrimary noch nicht — die
+    // Hinweise füllt die App beim ersten Start aus den zugeordneten Displays nach
     windows: {
       assignments: { ...(loaded.windows?.assignments ?? {}) },
+      assignmentHints: { ...(loaded.windows?.assignmentHints ?? {}) },
       rotation: { ...(loaded.windows?.rotation ?? {}) },
+      avoidPrimary: typeof loaded.windows?.avoidPrimary === 'boolean' ? loaded.windows.avoidPrimary : true,
     },
     defaultGroup: typeof loaded.defaultGroup === 'string' ? loaded.defaultGroup : def.defaultGroup,
   }
