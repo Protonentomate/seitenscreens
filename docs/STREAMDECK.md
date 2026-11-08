@@ -99,7 +99,7 @@ Knopf von selbst — kein manuelles Neu-Setzen mehr.
 **Pro Knopf einstellen** (Property Inspector):
 
 - **Basis-URL**: `http://<PC>:8080` (bzw. `http://localhost:8080` am Beamer-PC)
-- **Vorlage**: Name oder `Gruppe/Name`, z.B. `Pfimi/Welcome`
+- **Vorlage**: Name oder `Gruppe/Name`, z.B. `Gottesdienst/Welcome`
 - **Beim Drücken anwenden**: an (aus = nur Vorschau-Knopf ohne Schaltfunktion)
 - **Aktualisieren alle … Sekunden**: Standard 15
 

@@ -1,5 +1,5 @@
 // Stream-Deck-Plugin „Seitenscreens" (klassische SDK, reines JS).
-// Pro Knopf konfiguriert man Basis-URL + Vorlagen-Referenz (z.B. "Pfimi/Welcome").
+// Pro Knopf konfiguriert man Basis-URL + Vorlagen-Referenz (z.B. "Gottesdienst/Welcome").
 // - keyDown → wendet die Vorlage an (/api/template/.../apply)
 // - im Hintergrund → lädt /api/button/... und setzt es als Knopf-Bild,
 //   damit die Vorschau automatisch aktuell bleibt (Poll + direkt nach dem Anwenden).

@@ -20,7 +20,7 @@ aktualisiert sich der Knopf beim nächsten Poll von selbst.
 3. Aktion **Seitenscreens → „Vorlage anwenden"** auf einen Knopf ziehen und im
    Property Inspector einstellen:
    - **Basis-URL**: `http://<PC-IP>:8080` (am Beamer-PC: `http://localhost:8080`)
-   - **Vorlage**: `Name` oder `Gruppe/Name` (z.B. `Pfimi/Welcome`)
+   - **Vorlage**: `Name` oder `Gruppe/Name` (z.B. `Gottesdienst/Welcome`)
    - **Beim Drücken anwenden**: an/aus
    - **Aktualisieren alle … Sekunden**: Standard 15
 
