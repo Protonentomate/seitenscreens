@@ -53,8 +53,8 @@ alle 3 s; Anzeige „an", „aus", „startet …", „kühlt ab …", „offlin
 getestet (beide „an", 10 schnelle Abfragen in Folge problemlos).
 
 **Stand 15.11.2026:** Update auf dem Beamer-PC installiert, beide Beamer
-zeigen „an" (per PJLink). **Noch offen:** einmal aus- und wieder
-einschalten (nicht während eines Gottesdienstes) und schauen, ob „kühlt ab …"
+zeigen „an" (per PJLink); Ausschalten über die Steuerung funktioniert laut
+Brian. **Noch offen:** einmal wieder einschalten (nicht während eines Gottesdienstes) und schauen, ob „kühlt ab …"
 → „aus" → „startet …" → „an" sauber durchläuft.
 
 ## 3. Bildschirm-Zuordnung auf dem Beamer-PC durchspielen
