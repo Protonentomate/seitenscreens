@@ -143,7 +143,11 @@ export class ProjectorManager {
     if (this.timer) clearTimeout(this.timer)
     this.timer = setTimeout(() => {
       this.timer = null
-      void this.pollNow().finally(() => this.schedule(Date.now() < this.fastUntil ? FAST_POLL_MS : POLL_MS))
+      void this.pollNow().finally(() => {
+        // Einzelner Fehlversuch (z.B. beim Start): bald nochmals fragen statt 30 s „?"
+        const retrying = [...this.failures.values()].some((n) => n > 0 && n < OFFLINE_AFTER)
+        this.schedule(retrying || Date.now() < this.fastUntil ? FAST_POLL_MS : POLL_MS)
+      })
     }, delayMs)
   }
 

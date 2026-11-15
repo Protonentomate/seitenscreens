@@ -30,8 +30,12 @@ Inhalt:
 
 Ablage: `docs/ANLEITUNG.md` mit Bildern in `docs/img/`.
 
-Erste Screenshots vom Live-System (15.11.2026, Steuerung am PC und am Handy,
-alle Reiter der Verwaltung) liegen lokal in `dev/screenshots/2026-11-15/`,
+Erste Screenshots vom Live-System (15.11.2026, 1920×1080 für den A4-Druck,
+Steuerung und alle Reiter der Verwaltung, dazu „ganze Seite"-Varianten und die
+Handy-Ansicht) liegen lokal in `dev/screenshots/2026-11-15/`. Die Steuerung
+zeigt dort noch die alte, zu breite Live-Zeile: nach dem Update neu aufnehmen.
+Bedient wird fast nur am PC; die Anleitung braucht die Handy-Ansicht höchstens
+am Rand. Die Bilder liegen
 bewusst nicht im Repo: Sie zeigen Gruppen- und Vorlagennamen der Kirche. Vor
 einer Veröffentlichung neutrale Inhalte verwenden oder die Anleitung ausserhalb
 des öffentlichen Repos ablegen.

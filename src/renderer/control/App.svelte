@@ -285,17 +285,15 @@
       <div class="live">
         {#each SCREEN_NAMES as screen (screen)}
           {@const content = state.screens[screen]}
-          <div class="tile">
+          <!-- Kompakt: nur Kürzel, Dateiname als Tooltip (passt so auch aufs Handy) -->
+          <div class="tile" title={content ? `${SHORT[screen]}: ${content.file}` : `${SHORT[screen]}: leer`}>
             <div class="frame" class:black={!content || state.blackout}>
               {#if content && !state.blackout}
                 <img src={thumbUrl(content)} alt={content.file} />
-                {#if content.kind === 'video'}<span class="vbadge">▶ Video</span>{/if}
+                {#if content.kind === 'video'}<span class="vbadge">▶</span>{/if}
               {/if}
             </div>
-            <div class="tilefoot">
-              <span class="sname">{SHORT[screen]}</span>
-              <span class="fname">{content?.file ?? '—'}</span>
-            </div>
+            <div class="sname">{SHORT[screen]}</div>
           </div>
         {/each}
       </div>
@@ -473,56 +471,45 @@
     color: #aaa;
   }
 
+  /* Vier kleine Leinwände in einer Reihe, Lücke in der Mitte wie zwischen
+     den Beamern; minmax(0, …) verhindert, dass Inhalt die Spalten aufdrückt */
   .live {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) 14px repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    max-width: 440px;
   }
-  @media (max-width: 700px) {
-    .live {
-      grid-template-columns: repeat(2, 1fr);
-    }
+  .live .tile:nth-child(3) {
+    grid-column: 4;
   }
   .tile .frame {
     aspect-ratio: 9 / 16;
     background: #000;
     border: 1px solid #2c313a;
-    border-radius: 8px;
+    border-radius: 6px;
     overflow: hidden;
     position: relative;
-    max-height: 240px;
-    display: flex;
-    justify-content: center;
   }
   .tile .frame img {
+    width: 100%;
     height: 100%;
     object-fit: cover;
+    display: block;
   }
   .vbadge {
     position: absolute;
-    top: 6px;
-    right: 6px;
+    top: 4px;
+    right: 4px;
     background: rgba(0, 0, 0, 0.7);
-    font-size: 11px;
-    padding: 2px 6px;
-    border-radius: 6px;
-  }
-  .tilefoot {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding-top: 4px;
-    font-size: 12px;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 5px;
   }
   .sname {
     font-weight: 700;
-  }
-  .fname {
-    color: #888;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
+    font-size: 12px;
+    text-align: center;
+    padding-top: 3px;
   }
 
   /* Hover-Vorschau: Filmstreifen über dem Standbild, per steps() durchgeblättert */
