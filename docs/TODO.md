@@ -43,9 +43,20 @@ liefern. Vorbereitet ist:
 - Jeder Ein-/Aus-Befehl schreibt die Antwort des Beamers ins Konsolen-Log
   (`[projector] …`).
 
-Vor Ort: beide Beamer testen, Ausgabe und Log sichern, dann eine echte
-Status-Abfrage einbauen (PJLink, falls aktiv, sonst die Status-Seite des
-Webinterfaces) und regelmässig abfragen (z.B. alle 30 s).
+**Befund vor Ort (15.11.2026):** Beide Beamer sind Optoma 1080P
+(Webserver „GoAhead-Webs") und sprechen **PJLink ohne Passwort**
+(Begrüssung `PJLINK 0`, Klasse 2). Antworten im Betrieb: `%1POWR=1` (an),
+`%1NAME=Beamer links` bzw. `Beamer rechts`, `%1ERST=000000` (keine Fehler),
+`%1INPT=31`, `%1AVMT=30`. Die Antwort auf `%1LAMP ?` kam mit einem
+führenden Leerzeichen, also Zeilen vor dem Auswerten trimmen.
+
+Ursache der falschen Anzeige: Die App fragt den Status nie ab, sie zeigt nur
+an, welchen Befehl sie zuletzt geschickt hat (beim Start „?").
+
+Nächster Schritt: Status per PJLink (`%1POWR ?`) regelmässig abfragen (z.B.
+alle 30 s, nach einem Befehl öfter, weil Ab- und Aufwärmen dauert) und
+„kühlt ab"/„wärmt auf" in der Steuerung anzeigen. Ein/Aus kann über
+`control_cgi` bleiben oder ebenfalls auf PJLink (`%1POWR 1`/`0`) wechseln.
 
 ## 3. Bildschirm-Zuordnung auf dem Beamer-PC durchspielen
 
