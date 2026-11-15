@@ -32,8 +32,8 @@ Ablage: `docs/ANLEITUNG.md` mit Bildern in `docs/img/`.
 
 Erste Screenshots vom Live-System (15.11.2026, 1920×1080 für den A4-Druck,
 Steuerung und alle Reiter der Verwaltung, dazu „ganze Seite"-Varianten und die
-Handy-Ansicht) liegen lokal in `dev/screenshots/2026-11-15/`. Die Steuerung
-zeigt dort noch die alte, zu breite Live-Zeile: nach dem Update neu aufnehmen.
+Handy-Ansicht) liegen lokal in `dev/screenshots/2026-11-15/`; die Steuerung
+ist nach dem Update neu aufgenommen (kompakte Live-Zeile, Beamer-Status „an").
 Bedient wird fast nur am PC; die Anleitung braucht die Handy-Ansicht höchstens
 am Rand. Die Bilder liegen
 bewusst nicht im Repo: Sie zeigen Gruppen- und Vorlagennamen der Kirche. Vor
@@ -52,7 +52,8 @@ alle 3 s; Anzeige „an", „aus", „startet …", „kühlt ab …", „offlin
 (Details in SYSTEM.md, Abschnitt 6). Vom Mac aus gegen die echten Beamer
 getestet (beide „an", 10 schnelle Abfragen in Folge problemlos).
 
-**Noch offen:** Auf dem Beamer-PC nach dem Update einmal aus- und wieder
+**Stand 15.11.2026:** Update auf dem Beamer-PC installiert, beide Beamer
+zeigen „an" (per PJLink). **Noch offen:** einmal aus- und wieder
 einschalten (nicht während eines Gottesdienstes) und schauen, ob „kühlt ab …"
 → „aus" → „startet …" → „an" sauber durchläuft.
 
