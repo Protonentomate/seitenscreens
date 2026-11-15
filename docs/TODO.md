@@ -30,6 +30,12 @@ Inhalt:
 
 Ablage: `docs/ANLEITUNG.md` mit Bildern in `docs/img/`.
 
+Erste Screenshots vom Live-System (15.11.2026, Steuerung am PC und am Handy,
+alle Reiter der Verwaltung) liegen lokal in `dev/screenshots/2026-11-15/`,
+bewusst nicht im Repo: Sie zeigen Gruppen- und Vorlagennamen der Kirche. Vor
+einer Veröffentlichung neutrale Inhalte verwenden oder die Anleitung ausserhalb
+des öffentlichen Repos ablegen.
+
 ## 2. Beamer-Status: nach dem Update vor Ort prüfen
 
 **Befund (15.11.2026):** Beide Beamer sind Optoma 1080P und sprechen
