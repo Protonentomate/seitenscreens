@@ -106,7 +106,15 @@
     }
   }
 
-  const POWER_LABEL: Record<string, string> = { on: 'an', off: 'aus', unknown: '?', error: '!' }
+  const POWER_LABEL: Record<string, string> = {
+    on: 'an',
+    off: 'aus',
+    warming: 'startet …',
+    cooling: 'kühlt ab …',
+    offline: 'offline',
+    unknown: '?',
+    error: '!',
+  }
 
   // --- Vorschau beim Drüberfahren (Videos im Zeitraffer) ---
   // Maus: abspielen, solange sie über den Bildern ist. Touch/Tastatur: antippen
@@ -454,6 +462,15 @@
   }
   .pstate.error {
     background: #a83232;
+  }
+  .pstate.warming,
+  .pstate.cooling {
+    background: #8a6200;
+  }
+  .pstate.offline {
+    background: transparent;
+    border: 1px dashed #777;
+    color: #aaa;
   }
 
   .live {

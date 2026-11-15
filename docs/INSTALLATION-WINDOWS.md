@@ -185,7 +185,7 @@ Das alte Setup bleibt installiert. Falls nötig:
 | „Medienordner nicht gefunden" | Nextcloud fertig gesynct? Pfad in Einstellungen korrekt? |
 | Video spielt nicht / Warnung ⚠ | Badge-Text lesen: kaputte Datei, 60 fps oder falscher Codec → über die Verwaltung neu hochladen (`/admin` → Hochladen) |
 | Videos ruckeln | `/api/health` → `tools` ok? Hardware-Decode-Check kommt mit M6-Preflight |
-| Beamer „!" oder „?" | IP korrekt? Beamer im selben Netz? `/admin` → „Einstellungen" → „Verbindung testen" zeigt, was Webinterface und PJLink antworten. „?" nach dem Einschalten = keine Antwort innert 4 s (Befehl evtl. trotzdem angekommen) |
+| Beamer „offline", „!" oder „?" | „offline" = Beamer antwortet nicht (ohne Strom, Netzwerkkabel, falsche IP?). „!" = Befehl fehlgeschlagen, „?" = noch kein Status bzw. keine Antwort innert 4 s. `/admin` → „Einstellungen" → „Verbindung testen" zeigt, was Webinterface und PJLink antworten. Der Status kommt per PJLink: im Beamer-Menü muss PJLink an und ohne Passwort sein |
 | Bild auf falschem Beamer | Steuerung oben: „Links ↔ rechts tauschen", oder `/admin` → Tab „Anzeige" → Displays zuordnen („Fenster identifizieren" hilft) |
 | Beamer-Fenster fehlt | Steuerung zeigt „Beamer … nicht erkannt": Beamer einschalten/Kabel prüfen — das Fenster erscheint dann von selbst. Erkennt Windows den Beamer (Einstellungen → Anzeige)? |
 | Nach Update alte Oberfläche/Funktionen | App beenden und neu starten — der Start baut automatisch neu. Notfalls `node scripts\ensure-build.mjs` im Projektordner |

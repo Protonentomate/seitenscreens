@@ -30,35 +30,27 @@ Inhalt:
 
 Ablage: `docs/ANLEITUNG.md` mit Bildern in `docs/img/`.
 
-## 2. Beamer-Status (vor Ort)
+## 2. Beamer-Status: nach dem Update vor Ort prüfen
 
-Ein- und Ausschalten funktioniert, aber der Status in der Steuerung stimmt
-nicht. Ohne Zugang zum Netz der Beamer lässt sich nicht sagen, was die Geräte
-liefern. Vorbereitet ist:
+**Befund (15.11.2026):** Beide Beamer sind Optoma 1080P und sprechen
+**PJLink ohne Passwort** (`PJLINK 0`, Klasse 2, keine Fehler gemeldet). Die
+alte Anzeige war falsch, weil die App den Status nie abfragte, sondern nur den
+zuletzt geschickten Befehl zeigte.
 
-- `/admin` → „Einstellungen" → **„Verbindung testen"** (bzw.
-  `GET /api/projector/{links|rechts}/diagnose`): zeigt die Startseite des
-  Webinterfaces und, ob der Beamer **PJLink** spricht (Port 4352, liefert
-  an/aus/kühlt ab/wärmt auf).
-- Jeder Ein-/Aus-Befehl schreibt die Antwort des Beamers ins Konsolen-Log
-  (`[projector] …`).
+**Eingebaut:** Status per PJLink alle 30 s, nach einem Befehl 2 Minuten lang
+alle 3 s; Anzeige „an", „aus", „startet …", „kühlt ab …", „offline"
+(Details in SYSTEM.md, Abschnitt 6). Vom Mac aus gegen die echten Beamer
+getestet (beide „an", 10 schnelle Abfragen in Folge problemlos).
 
-**Befund vor Ort (15.11.2026):** Beide Beamer sind Optoma 1080P
-(Webserver „GoAhead-Webs") und sprechen **PJLink ohne Passwort**
-(Begrüssung `PJLINK 0`, Klasse 2). Antworten im Betrieb: `%1POWR=1` (an),
-`%1NAME=Beamer links` bzw. `Beamer rechts`, `%1ERST=000000` (keine Fehler),
-`%1INPT=31`, `%1AVMT=30`. Die Antwort auf `%1LAMP ?` kam mit einem
-führenden Leerzeichen, also Zeilen vor dem Auswerten trimmen.
-
-Ursache der falschen Anzeige: Die App fragt den Status nie ab, sie zeigt nur
-an, welchen Befehl sie zuletzt geschickt hat (beim Start „?").
-
-Nächster Schritt: Status per PJLink (`%1POWR ?`) regelmässig abfragen (z.B.
-alle 30 s, nach einem Befehl öfter, weil Ab- und Aufwärmen dauert) und
-„kühlt ab"/„wärmt auf" in der Steuerung anzeigen. Ein/Aus kann über
-`control_cgi` bleiben oder ebenfalls auf PJLink (`%1POWR 1`/`0`) wechseln.
+**Noch offen:** Auf dem Beamer-PC nach dem Update einmal aus- und wieder
+einschalten (nicht während eines Gottesdienstes) und schauen, ob „kühlt ab …"
+→ „aus" → „startet …" → „an" sauber durchläuft.
 
 ## 3. Bildschirm-Zuordnung auf dem Beamer-PC durchspielen
+
+Stand 15.11.2026: Das Update lief; die alte Zuordnung wurde übernommen und um
+Name und Auflösung der Displays ergänzt, der Hauptbildschirm ist gesperrt.
+Die Schritte unten sind noch nicht durchgespielt.
 
 Die neue Logik (Fenster warten auf fehlende Beamer, nie auf dem
 Hauptbildschirm, Bestätigen/Tauschen) ist mit Unit-Tests abgedeckt, aber

@@ -138,9 +138,10 @@ async function main(): Promise<void> {
   store.on('mediaroot-changed', (root: string) => void index.start(root))
   void index.start(config.mediaRoot)
 
-  // Beamer-Steuerung (control_cgi über die Webinterfaces)
+  // Beamer-Steuerung (control_cgi über die Webinterfaces), Status per PJLink
   const projectors = new ProjectorManager(config.projectors, () => store.setProjectors(projectors.list()))
   store.setProjectors(projectors.list())
+  projectors.start()
   store.on('projectors-changed', (configs) => {
     projectors.updateConfigs(configs)
     store.setProjectors(projectors.list())
@@ -158,6 +159,7 @@ async function main(): Promise<void> {
   }
 
   app.on('before-quit', () => {
+    projectors.stop()
     store.flushLastState()
     store.flushConfig()
   })

@@ -29,8 +29,8 @@ anderer Entwickler, KI-Assistent) ohne Archäologie weitermachen können.
 7. Keine Authentifizierung — bewusste Entscheidung (Kirchen-LAN, Einfachheit)
 
 ### Explizit verschoben/abgelehnt
-- PJLink-Beamer-Steuerung: nicht nötig (control_cgi funktioniert), Treiber-Schicht
-  ist aber austauschbar gebaut
+- PJLink zum Schalten: nicht nötig (control_cgi funktioniert), Treiber-Schicht
+  ist aber austauschbar gebaut. Für den **Status** wird PJLink genutzt (siehe 6.)
 - „Serie"-Unterordner in Vorlagen-Ordnern: alte Artefakte, werden ignoriert
 - PIN-Schutz für Admin-Funktionen: bewusst weggelassen
 
@@ -291,12 +291,18 @@ HD 630, Kaltstart-Budget ≤ 60 s.
 
 - **Rollback**: Das alte OBS-Setup bleibt auf dem Beamer-PC installiert
   (Autostart deaktiviert), bis 4–6 Gottesdienste fehlerfrei liefen.
-- Beamer-Status ist optimistisch (HTTP 200 = geschaltet); die Webinterfaces
-  liefern keinen sauberen Status. Eine Zeitüberschreitung (4 s) zeigt „?"
-  statt „!" (der Befehl kann trotzdem angekommen sein). Jede Antwort wird
-  geloggt (`[projector] …`); `GET /api/projector/{id}/diagnose` bzw.
-  „Verbindung testen" in den Einstellungen fragt Webinterface und PJLink ab —
-  Grundlage, um vor Ort eine echte Status-Abfrage einzubauen (docs/TODO.md).
+- **Beamer-Status** kommt per PJLink (`%1POWR ?`, Port 4352, ohne Passwort;
+  die Optoma-Beamer der Kirche sprechen es, vor Ort geprüft am 15.11.2026):
+  alle 30 s, nach einem Ein-/Aus-Befehl 2 Minuten lang alle 3 s. Anzeige:
+  „an", „aus", „startet …", „kühlt ab …", „offline" (zweimal in Folge keine
+  Antwort: ohne Strom oder nicht im Netz). Kurz nach einem Befehl wird ein
+  noch alter Stand 15 s lang ignoriert (kein Hin- und Herspringen). Ist
+  PJLink mit Passwort geschützt, bleibt es bei der Annahme aus dem letzten
+  Befehl (Tooltip sagt warum). Geschaltet wird weiter über control_cgi;
+  dessen Antworten werden geloggt (`[projector] …`). „?" = noch nichts
+  bekannt bzw. Befehl ohne Antwort innert 4 s, „!" = Befehl fehlgeschlagen.
+  `GET /api/projector/{id}/diagnose` bzw. „Verbindung testen" in den
+  Einstellungen zeigt Webinterface und PJLink-Antwort.
 - **Beamer-Fenster ↔ Displays** (`src/shared/placement.ts`, getestet): bei
   jedem Start und bei jedem Display-Event (Beamer ein-/ausgesteckt oder
   eingeschaltet; Hinzufügen entprellt 1 s, Entfernen sofort) neu geplant:

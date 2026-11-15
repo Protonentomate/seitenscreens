@@ -214,7 +214,11 @@ export interface MediaIndexSnapshot {
   mediaRootExists: boolean
 }
 
-export type ProjectorPower = 'on' | 'off' | 'unknown' | 'error'
+/**
+ * on/off/warming/cooling/offline kommen aus der PJLink-Abfrage, unknown
+ * (noch nichts bekannt) und error (Befehl fehlgeschlagen) aus den Befehlen.
+ */
+export type ProjectorPower = 'on' | 'off' | 'warming' | 'cooling' | 'offline' | 'unknown' | 'error'
 
 export interface ProjectorStatus {
   id: WindowRole

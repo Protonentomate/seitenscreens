@@ -13,7 +13,7 @@ ein Stream Deck bedient.
 - [docs/INSTALLATION-KURZ.md](docs/INSTALLATION-KURZ.md) — Schnellversion: Desktop-Icon, Autostart und **Update** per Doppelklick (`scripts/windows/`)
 - [docs/INSTALLATION-WINDOWS.md](docs/INSTALLATION-WINDOWS.md) — Installation & Betrieb auf dem Beamer-PC (ausführlich)
 - [docs/STREAMDECK.md](docs/STREAMDECK.md) — Stream Deck verbinden (URLs, Gruppen, Vorschau-Bilder auf den Knöpfen)
-- [docs/TODO.md](docs/TODO.md) — Offene Punkte (Bedienungsanleitung, Beamer-Status vor Ort, …)
+- [docs/TODO.md](docs/TODO.md) — Offene Punkte (Bedienungsanleitung, Bildschirm-Logik vor Ort testen, …)
 
 ## Schnellstart (Entwicklung, macOS/Windows)
 
