@@ -7,6 +7,11 @@
 # ausserhalb des Projektordners und werden nie angefasst.
 
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell 5.1: TLS 1.2 fuer GitHub sicher einschalten (sonst je nach
+# System "Could not create SSL/TLS secure channel") und den Fortschrittsbalken
+# abschalten (der macht Invoke-WebRequest sonst um ein Vielfaches langsamer)
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+$ProgressPreference = 'SilentlyContinue'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $root
 $zipUrl = 'https://github.com/Protonentomate/seitenscreens/archive/refs/heads/main.zip'
