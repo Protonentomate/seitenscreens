@@ -8,6 +8,7 @@ import { MediaIndex } from './mediaIndex'
 import { ProjectorManager } from './projectors'
 import { IngestQueue } from './ingest'
 import { PreviewSprites } from './previews'
+import { StatusWindow } from './statusWindow'
 
 // Muss vor app.whenReady() passieren
 registerMediaSchemePrivileges()
@@ -142,6 +143,12 @@ async function main(): Promise<void> {
   const projectors = new ProjectorManager(config.projectors, () => store.setProjectors(projectors.list()))
   store.setProjectors(projectors.list())
   projectors.start()
+  if (config.projectorAutoOn) {
+    void projectors
+      .powerOnIfOff()
+      .then((ids) => console.log(`[projector] Beim Start eingeschaltet: ${ids.length ? ids.join(', ') : 'keiner (schon an, unbekannt oder ausserhalb 6–22 Uhr)'}`))
+      .catch((err: unknown) => console.error('[projector] Automatisch einschalten fehlgeschlagen:', err))
+  }
   store.on('projectors-changed', (configs) => {
     projectors.updateConfigs(configs)
     store.setProjectors(projectors.list())
@@ -157,6 +164,12 @@ async function main(): Promise<void> {
   } catch (err) {
     console.error('[api] Start fehlgeschlagen:', err)
   }
+
+  // Statusfenster auf dem Hauptbildschirm (Steuerung als App-Fenster). Wer das
+  // Desktop-Symbol startet, obwohl Seitenscreens schon läuft, bekommt es zurück.
+  const statusWindow = new StatusWindow(`http://localhost:${config.server.port}/`)
+  if (store.getConfig().statusWindow) statusWindow.show()
+  app.on('second-instance', () => statusWindow.show())
 
   app.on('before-quit', () => {
     projectors.stop()

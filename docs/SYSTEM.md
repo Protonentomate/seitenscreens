@@ -232,6 +232,19 @@ Leinwand liegen — wird verweigert. Endpunkt: `POST /api/trash`, Body
   `rotation` (0/180), `avoidPrimary` (Hauptbildschirm nie automatisch, Standard
   an). Gesetzt über `/admin` → „Anzeige" bzw. „Ja, stimmt" / „Links ↔ rechts
   tauschen" in der Steuerung.
+- `disabledScreens` — „Weihnachtsbaum-Modus": Leinwände, die immer schwarz
+  bleiben (z.B. weil etwas davor steht). Der Player gibt ihnen keinen Inhalt,
+  kein Testbild, keinen Kalibrier-Marker; alles andere läuft normal. Die
+  Steuerung zeigt einen Hinweis und „aus" in der Live-Zeile. Standard: leer.
+- `projectorAutoOn` — beim Start Beamer einschalten, die laut PJLink sicher
+  „aus" sind (unbekannter Stand bleibt unangetastet), nur 6–22 Uhr, damit ein
+  nächtlicher Neustart (Windows-Update) sie nicht anwirft. Standard: aus.
+- `statusWindow` — beim Start die Steuerung als normales Fenster auf dem
+  Hauptbildschirm öffnen (zeigt zusätzlich die Netzwerk-Adressen). Standard: an.
+  Wird das Programm ein zweites Mal gestartet (Desktop-Symbol), beendet sich
+  die zweite Instanz und holt das Fenster der ersten nach vorne.
+
+  Alle drei unter `/admin` → „Einstellungen", wirken sofort.
 
 **StreamFX-Import**: `npm run import-streamfx` konvertiert die Corner-Pin-Werte
 aus einem OBS-Export. Formel (am StreamFX-Quellcode verifiziert):

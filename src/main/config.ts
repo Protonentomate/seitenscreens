@@ -61,6 +61,9 @@ export function defaultConfig(): AppConfig {
     },
     windows: { assignments: {}, assignmentHints: {}, rotation: {}, avoidPrimary: true },
     defaultGroup: '',
+    disabledScreens: [],
+    projectorAutoOn: false,
+    statusWindow: true,
   }
 }
 
@@ -83,6 +86,12 @@ export function mergeWithDefaults(loaded: Partial<AppConfig>): AppConfig {
       avoidPrimary: typeof loaded.windows?.avoidPrimary === 'boolean' ? loaded.windows.avoidPrimary : true,
     },
     defaultGroup: typeof loaded.defaultGroup === 'string' ? loaded.defaultGroup : def.defaultGroup,
+    // Neuere Felder: ältere Configs bekommen die Standardwerte (alles an, Fenster an)
+    disabledScreens: Array.isArray(loaded.disabledScreens)
+      ? SCREEN_NAMES.filter((s) => (loaded.disabledScreens as unknown[]).includes(s))
+      : def.disabledScreens,
+    projectorAutoOn: typeof loaded.projectorAutoOn === 'boolean' ? loaded.projectorAutoOn : def.projectorAutoOn,
+    statusWindow: typeof loaded.statusWindow === 'boolean' ? loaded.statusWindow : def.statusWindow,
   }
   // Nur bekannte Screens behalten
   for (const key of Object.keys(merged.screens)) {

@@ -21,7 +21,8 @@ kommt auf eine oder alle Leinwände.
 
 ## 1. Einschalten
 
-1. Den Beamer-PC einschalten. Seitenscreens startet von selbst.
+1. Den Beamer-PC einschalten. Seitenscreens startet von selbst und öffnet die
+   Steuerung als Fenster (darf man schliessen, die Leinwände laufen weiter).
 2. Die **Steuerung** öffnen: Desktop-Symbol „Seitenscreens Steuerung", die
    Taste auf dem Stream Deck oder vom Handy/Tablet im selben WLAN
    `http://<Adresse des Beamer-PCs>:8080`.
@@ -95,7 +96,8 @@ Medienordner/
   Erlaubt sind `.jpg`, `.png`, `.webp` und `.mp4`. Fehlt eine Datei, zeigt die
   App eine Warnung.
 - **Einzelbild:** eine lose Bilddatei direkt im Gruppenordner. Der Dateiname
-  ist egal.
+  ist egal, nur **nie** `LinksLinks` usw.: Sonst hält die App den ganzen
+  Gruppenordner für eine Vorlage, und seine Vorlagen verschwinden.
 - **Format:** Hochformat **1080 × 1920** Pixel pro Leinwand. Videos lieber über
   Weg A hochladen, die App macht sie dann passend (Grösse, 30 fps, ohne Ton).
 - **Ausblenden statt löschen:** Ordner, die mit `_` beginnen oder „Archiv"
@@ -109,6 +111,7 @@ Medienordner/
 | Problem | Was tun |
 |---|---|
 | Alles schwarz | Ist **Blackout** aktiv? Nochmals drücken. |
+| Eine Leinwand bleibt immer schwarz | Steht oben „Weihnachtsbaum-Modus"? Dann ist sie absichtlich aus (Verwaltung → „Einstellungen"). |
 | Beamer zeigt „?" | Kurz warten, der Status kommt nach ein paar Sekunden. |
 | Beamer zeigt „offline" | Beamer ohne Strom oder Netzwerkkabel? |
 | Links und rechts vertauscht | Verwaltung → „Anzeige" → „Links ↔ rechts tauschen". |

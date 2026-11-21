@@ -73,6 +73,13 @@ const POWER_TEXT: Record<ProjectorPower, string> = {
 
 const clock = (): string => new Date().toLocaleTimeString('de-CH')
 
+/**
+ * Automatisch einschalten nur tagsüber: Startet der PC nachts neu (z.B. für
+ * ein Windows-Update), sollen die Beamer nicht bis zum Morgen laufen.
+ */
+export const AUTO_ON_FROM_HOUR = 6
+export const AUTO_ON_UNTIL_HOUR = 22
+
 export class ProjectorManager {
   private readonly statuses = new Map<string, ProjectorStatus>()
   private readonly drivers = new Map<string, ProjectorDriver>()
@@ -201,6 +208,26 @@ export class ProjectorManager {
     status.power = reading
     status.lastMessage = `Laut Beamer ${POWER_TEXT[reading]} (seit ${clock()})`
     return true
+  }
+
+  /**
+   * Beim Start der App: Beamer, die laut PJLink sicher aus sind, einschalten
+   * (nur zwischen AUTO_ON_FROM_HOUR und AUTO_ON_UNTIL_HOUR). Unbekannter Stand
+   * („?", kein PJLink) wird nicht angefasst. Gibt die eingeschalteten IDs zurück.
+   */
+  async powerOnIfOff(now: Date = new Date(), retryDelayMs = 3000): Promise<string[]> {
+    const hour = now.getHours()
+    if (hour < AUTO_ON_FROM_HOUR || hour >= AUTO_ON_UNTIL_HOUR) return []
+    // Der erste Versuch beim Start bekommt manchmal keine Antwort: bis zu 3×
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await this.pollNow()
+      const unknown = [...this.pollable].some((id) => this.statuses.get(id)?.power === 'unknown' && !this.pjlinkLocked.has(id))
+      if (!unknown) break
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs))
+    }
+    const off = [...this.pollable].filter((id) => this.statuses.get(id)?.power === 'off')
+    for (const id of off) await this.setPower(id, true)
+    return off
   }
 
   async setPower(id: string | 'all', on: boolean): Promise<{ ok: boolean; errors: string[] }> {

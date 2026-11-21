@@ -331,13 +331,17 @@ function render(state: AppState): void {
       view.root.style.transform = matrix3dForQuad(CONTENT_WIDTH, CONTENT_HEIGHT, quad)
     }
 
-    view.root.classList.toggle('show-testpattern', state.testPattern)
+    // Weihnachtsbaum-Modus: ausgeschaltete Leinwand bleibt schwarz — kein
+    // Inhalt, kein Testbild, kein Marker (es steht etwas davor)
+    const off = state.disabledScreens?.includes(screen) ?? false
+
+    view.root.classList.toggle('show-testpattern', state.testPattern && !off)
 
     // Fokus-Marker der Kalibrier-UI: die gerade bearbeitete Ecke hervorheben.
     // Nur zusammen mit dem Testbild — ein vergessener Fokus (Admin-Browser
     // einfach zugeklappt) darf im Gottesdienst keinen Marker stehen lassen.
     const focus = state.calibrationFocus
-    if (focus && focus.screen === screen && state.testPattern) {
+    if (focus && focus.screen === screen && state.testPattern && !off) {
       const pos = CORNER_POS[focus.corner]
       view.cornerMarker.style.left = `${pos.x}px`
       view.cornerMarker.style.top = `${pos.y}px`
@@ -346,7 +350,7 @@ function render(state: AppState): void {
       view.cornerMarker.classList.remove('active')
     }
 
-    const content = state.screens[screen]
+    const content = off ? null : state.screens[screen]
     setQuadContent(view, content, state.transitionMs)
     applyPlayback(view, content, state)
   }

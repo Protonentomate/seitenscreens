@@ -9,6 +9,17 @@ export const SHORT: Record<ScreenName, string> = {
   RechtsRechts: 'RR',
 }
 
+/** Ausgeschriebene Namen mit Nummer (von links nach rechts gezählt). */
+export const LONG: Record<ScreenName, string> = {
+  LinksLinks: '1 · Links-Links (LL)',
+  LinksRechts: '2 · Links-Rechts (LR)',
+  RechtsLinks: '3 · Rechts-Links (RL)',
+  RechtsRechts: '4 · Rechts-Rechts (RR)',
+}
+
+/** Läuft die Seite im Statusfenster der App (nicht im Browser)? */
+export const inAppWindow = typeof navigator !== 'undefined' && navigator.userAgent.includes('SeitenscreensFenster')
+
 // Im Dev-Modus läuft die Seite auf dem Vite-Server, die API auf 8080
 export const apiBase = import.meta.env.DEV ? 'http://localhost:8080' : ''
 export const wsUrl = import.meta.env.DEV

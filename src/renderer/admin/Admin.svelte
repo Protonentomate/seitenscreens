@@ -3,7 +3,7 @@
   import { SCREEN_NAMES, WINDOW_ROLES, WINDOW_SCREENS, type ScreenName, type WindowRole } from '../../shared/screens'
   import { spanCrops, span2Pairs } from '../../shared/span'
   import { placementNeedsConfirmation } from '../../shared/placement'
-  import { SHORT, apiBase, wsUrl, controlUrl, thumbUrl, groupNames, groupLabel, singleGroup } from '../lib/client'
+  import { SHORT, LONG, apiBase, wsUrl, controlUrl, thumbUrl, groupNames, groupLabel, singleGroup } from '../lib/client'
 
   type Corner = 'tl' | 'tr' | 'br' | 'bl'
   const CORNERS: Corner[] = ['tl', 'tr', 'br', 'bl']
@@ -1137,6 +1137,48 @@
           <div class="settingsfoot">
             <button class="primary" onclick={saveSettings}>Speichern</button>
           </div>
+          <!-- Wirken sofort (ohne „Speichern") -->
+          <fieldset class="layoutset">
+            <legend>🎄 Weihnachtsbaum-Modus (Leinwände ausschalten)</legend>
+            <p class="muted small">
+              Steht etwas vor einer Leinwand, hier ausschalten: Sie bleibt dann bei jeder Vorlage schwarz, alles andere
+              läuft normal. Wirkt sofort; die Steuerung zeigt einen Hinweis, solange eine Leinwand aus ist.
+            </p>
+            {#each SCREEN_NAMES as s (s)}
+              <label class="radio">
+                <input
+                  type="checkbox"
+                  checked={state?.disabledScreens?.includes(s) ?? false}
+                  onchange={(e) => {
+                    const on = (e.currentTarget as HTMLInputElement).checked
+                    const current = state?.disabledScreens ?? []
+                    const next = on ? [...current, s] : current.filter((x) => x !== s)
+                    void api('/api/screens/disabled', { screens: next })
+                  }}
+                />
+                Leinwand {LONG[s]} ausschalten
+              </label>
+            {/each}
+          </fieldset>
+          <fieldset class="layoutset">
+            <legend>Beim Start des Programms</legend>
+            <label class="radio">
+              <input
+                type="checkbox"
+                checked={state?.statusWindow ?? true}
+                onchange={(e) => api('/api/settings/options', { statusWindow: (e.currentTarget as HTMLInputElement).checked })}
+              />
+              Steuerung als Fenster auf dem Hauptbildschirm öffnen
+            </label>
+            <label class="radio">
+              <input
+                type="checkbox"
+                checked={state?.projectorAutoOn ?? false}
+                onchange={(e) => api('/api/settings/options', { projectorAutoOn: (e.currentTarget as HTMLInputElement).checked })}
+              />
+              Beamer automatisch einschalten (nur zwischen 6 und 22 Uhr)
+            </label>
+          </fieldset>
           <fieldset class="layoutset">
             <legend>Sichern & Wiederherstellen</legend>
             <div class="backup">
@@ -1488,6 +1530,17 @@
     font-size: 13px;
     color: #aab0b8;
     margin-bottom: 12px;
+  }
+  /* Häkchen-Zeilen (Weihnachtsbaum-Modus, Start-Optionen): Häkchen links neben dem Text */
+  .settings label.radio {
+    display: flex;
+    margin-bottom: 8px;
+    color: #cdd2d9;
+  }
+  .settings label.radio input {
+    display: inline-block;
+    width: auto;
+    margin: 0;
   }
   .settings input {
     display: block;

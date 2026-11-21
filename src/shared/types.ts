@@ -124,6 +124,15 @@ export interface AppConfig {
   windows: WindowSettings
   /** Gruppe, deren Tab in den UIs vorgewählt ist ('' = alphabetisch erste). */
   defaultGroup: string
+  /**
+   * „Weihnachtsbaum-Modus": diese Leinwände bleiben immer schwarz (z.B. weil
+   * etwas davor steht). Leer = alle Leinwände zeigen ihren Inhalt.
+   */
+  disabledScreens: ScreenName[]
+  /** Beim Start der App Beamer einschalten, die laut PJLink aus sind (nur tagsüber). */
+  projectorAutoOn: boolean
+  /** Beim Start die Steuerung als Fenster auf dem Hauptbildschirm zeigen. */
+  statusWindow: boolean
 }
 
 /**
@@ -259,4 +268,10 @@ export interface AppState {
    * im Testbild, damit man auf der echten Leinwand sieht, woran man zieht.
    */
   calibrationFocus: { screen: ScreenName; corner: 'tl' | 'tr' | 'br' | 'bl' } | null
+  /** Weihnachtsbaum-Modus: ausgeschaltete Leinwände (bleiben schwarz). */
+  disabledScreens: ScreenName[]
+  projectorAutoOn: boolean
+  statusWindow: boolean
+  /** Adressen der Steuerung im Netzwerk, z.B. http://192.168.1.20:8080 */
+  serverUrls: string[]
 }

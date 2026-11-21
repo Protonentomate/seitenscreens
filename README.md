@@ -101,6 +101,8 @@ Die POST-Endpunkte am Tabellenende sind primär für die Admin-UI gedacht.
 | `GET\|POST /api/display/swap` | Links und rechts vertauschen und festhalten |
 | `GET\|POST /api/display/confirm` | Automatische Verteilung als feste Zuordnung übernehmen („Ja, stimmt") |
 | `POST /api/display/settings` | `{avoidPrimary: true\|false}` — Hauptbildschirm nie automatisch für einen Beamer |
+| `POST /api/screens/disabled` | `{screens: ["RechtsRechts", …]}` — Weihnachtsbaum-Modus: diese Leinwände bleiben schwarz (`[]` = alle an) |
+| `POST /api/settings/options` | `{projectorAutoOn?: true\|false, statusWindow?: true\|false}` — Beamer beim Start einschalten (6–22 Uhr), Statusfenster beim Start |
 | `POST /api/display/rotation` | Ausgabe um 180° drehen, Body `{window, deg:0\|180}` |
 | `GET\|POST /api/display/identify` | Fenster-Kennung 4 s gross einblenden (links/rechts) |
 | `POST /api/display/refullscreen` | Vollbild auf den Beamer-Fenstern erzwingen |

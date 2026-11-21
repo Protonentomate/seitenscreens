@@ -443,6 +443,28 @@ export async function startApi(
     return ok()
   })
 
+  // Weihnachtsbaum-Modus: ausgeschaltete Leinwände bleiben schwarz
+  app.post('/api/screens/disabled', async (req, reply) => {
+    const body = req.body as { screens?: unknown } | null
+    if (!Array.isArray(body?.screens) || !body.screens.every((s) => typeof s === 'string' && isScreenName(s))) {
+      return reply.status(400).send({ ok: false, error: 'screens: Liste aus LinksLinks|LinksRechts|RechtsLinks|RechtsRechts erwartet' })
+    }
+    store.setDisabledScreens(body.screens as ScreenName[])
+    return ok()
+  })
+
+  // Optionen: Beamer beim Start einschalten, Statusfenster beim Start
+  app.post('/api/settings/options', async (req, reply) => {
+    const body = req.body as { projectorAutoOn?: unknown; statusWindow?: unknown } | null
+    const pick = (v: unknown) => (typeof v === 'boolean' ? v : undefined)
+    const options = { projectorAutoOn: pick(body?.projectorAutoOn), statusWindow: pick(body?.statusWindow) }
+    if (options.projectorAutoOn === undefined && options.statusWindow === undefined) {
+      return reply.status(400).send({ ok: false, error: 'projectorAutoOn und/oder statusWindow (true|false) erwartet' })
+    }
+    store.setOptions(options)
+    return ok()
+  })
+
   app.post('/api/display/rotation', async (req, reply) => {
     const body = req.body as { window?: string; deg?: unknown } | null
     const deg = Number(body?.deg)

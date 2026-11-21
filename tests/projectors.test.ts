@@ -90,6 +90,26 @@ describe('ProjectorManager: Status-Abfrage', () => {
     expect(changes).toBe(1)
   })
 
+  it('schaltet beim Start nur ausgeschaltete Beamer ein, und nur tagsüber', async () => {
+    let value = '0'
+    await fakeProjector('PJLINK 0', () => value)
+    const tagsueber = new Date(2026, 10, 22, 9, 30)
+    const nachts = new Date(2026, 10, 22, 3, 0)
+
+    // nachts: nichts tun
+    expect(await new ProjectorManager(LOCAL, () => {}).powerOnIfOff(nachts, 10)).toEqual([])
+
+    // läuft schon: nichts tun
+    value = '1'
+    expect(await new ProjectorManager(LOCAL, () => {}).powerOnIfOff(tagsueber, 10)).toEqual([])
+
+    // aus: einschalten (der Befehl geht hier an 127.0.0.1:80 und scheitert — es zählt der Versuch)
+    value = '0'
+    const manager = new ProjectorManager(LOCAL, () => {})
+    expect(await manager.powerOnIfOff(tagsueber, 10)).toEqual(['links'])
+    expect(first(manager).lastMessage).not.toBe('Laut Beamer aus (Standby)')
+  })
+
   it('fragt bei PJLink-Passwort nicht weiter und sagt warum', async () => {
     await fakeProjector('PJLINK 1 498e4a67', () => '1')
     const manager = new ProjectorManager(LOCAL, () => {})

@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import type {
   AppConfig,
@@ -121,6 +122,10 @@ export class Store extends EventEmitter {
       windowSettings: this.config.windows,
       windowPlacement: this.windowPlacement,
       calibrationFocus: this.calibrationFocus,
+      disabledScreens: [...this.config.disabledScreens],
+      projectorAutoOn: this.config.projectorAutoOn,
+      statusWindow: this.config.statusWindow,
+      serverUrls: this.serverUrls(),
       defaultGroup: this.config.defaultGroup,
     }
   }
@@ -130,6 +135,46 @@ export class Store extends EventEmitter {
     this.config.defaultGroup = group
     saveConfig(this.config)
     this.broadcast()
+  }
+
+  /** Weihnachtsbaum-Modus: diese Leinwände bleiben schwarz (leere Liste = alle an). */
+  setDisabledScreens(screens: ScreenName[]): void {
+    const next = SCREEN_NAMES.filter((s) => screens.includes(s))
+    if (next.join() === this.config.disabledScreens.join()) return
+    this.config.disabledScreens = next
+    saveConfig(this.config)
+    this.broadcast()
+  }
+
+  setOptions(options: { projectorAutoOn?: boolean; statusWindow?: boolean }): void {
+    let changed = false
+    if (options.projectorAutoOn !== undefined && options.projectorAutoOn !== this.config.projectorAutoOn) {
+      this.config.projectorAutoOn = options.projectorAutoOn
+      changed = true
+    }
+    if (options.statusWindow !== undefined && options.statusWindow !== this.config.statusWindow) {
+      this.config.statusWindow = options.statusWindow
+      changed = true
+    }
+    if (!changed) return
+    saveConfig(this.config)
+    this.broadcast()
+  }
+
+  /** Adressen der Steuerung im LAN (für Handy/Tablet), alle 30 s neu ermittelt. */
+  private serverUrlCache: { at: number; urls: string[] } = { at: 0, urls: [] }
+  private serverUrls(): string[] {
+    if (Date.now() - this.serverUrlCache.at < 30_000) return this.serverUrlCache.urls
+    const urls: string[] = []
+    for (const list of Object.values(os.networkInterfaces())) {
+      for (const net of list ?? []) {
+        if (net.family === 'IPv4' && !net.internal && !net.address.startsWith('169.254.')) {
+          urls.push(`http://${net.address}:${this.config.server.port}`)
+        }
+      }
+    }
+    this.serverUrlCache = { at: Date.now(), urls }
+    return urls
   }
 
   /**

@@ -5,6 +5,8 @@
   import { PREVIEW_FRAMES, PREVIEW_FPS } from '../../shared/preview'
   import {
     SHORT,
+    LONG,
+    inAppWindow,
     apiBase,
     wsUrl,
     adminUrl,
@@ -204,6 +206,27 @@
   {#if !state}
     <p class="muted">Verbinde…</p>
   {:else}
+    {#if inAppWindow}
+      <!-- Statusfenster der App: zeigt, dass es läuft und wo man es sonst erreicht -->
+      <p class="appinfo">
+        Seitenscreens läuft.
+        {#if state.serverUrls?.length}
+          Handy/Tablet: {#each state.serverUrls as url, i (url)}{i > 0 ? ' · ' : ''}<strong>{url}</strong>{/each}.
+        {/if}
+        Dieses Fenster darf man schliessen, die Leinwände laufen weiter.
+      </p>
+    {/if}
+
+    {#if state.disabledScreens?.length}
+      <div class="banner warn">
+        🎄 Weihnachtsbaum-Modus: {state.disabledScreens.length === 1 ? 'Leinwand' : 'Leinwände'}
+        {state.disabledScreens.map((s) => LONG[s]).join(', ')}
+        {state.disabledScreens.length === 1 ? 'ist' : 'sind'} ausgeschaltet und
+        {state.disabledScreens.length === 1 ? 'bleibt' : 'bleiben'} schwarz.
+        <a href={`${adminUrl}#einstellungen`}>Aufheben unter Verwaltung → Einstellungen</a>
+      </div>
+    {/if}
+
     {#if !state.mediaIndex.mediaRootExists}
       <div class="banner error">
         Medienordner nicht gefunden{state.mediaRoot ? `: ${state.mediaRoot}` : ' (nicht konfiguriert)'} — in der
@@ -286,9 +309,19 @@
         {#each SCREEN_NAMES as screen (screen)}
           {@const content = state.screens[screen]}
           <!-- Kompakt: nur Kürzel, Dateiname als Tooltip (passt so auch aufs Handy) -->
-          <div class="tile" title={content ? `${SHORT[screen]}: ${content.file}` : `${SHORT[screen]}: leer`}>
-            <div class="frame" class:black={!content || state.blackout}>
-              {#if content && !state.blackout}
+          {@const off = state.disabledScreens?.includes(screen) ?? false}
+          <div
+            class="tile"
+            title={off
+              ? `${SHORT[screen]}: ausgeschaltet (Weihnachtsbaum-Modus)`
+              : content
+                ? `${SHORT[screen]}: ${content.file}`
+                : `${SHORT[screen]}: leer`}
+          >
+            <div class="frame" class:black={!content || state.blackout || off}>
+              {#if off}
+                <span class="offlabel">aus</span>
+              {:else if content && !state.blackout}
                 <img src={thumbUrl(content)} alt={content.file} />
                 {#if content.kind === 'video'}<span class="vbadge">▶</span>{/if}
               {/if}
@@ -495,6 +528,25 @@
     height: 100%;
     object-fit: cover;
     display: block;
+  }
+  .offlabel {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #888;
+    font-size: 12px;
+    border: 1px dashed #444;
+    border-radius: 6px;
+  }
+  .appinfo {
+    margin: 0 0 12px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: #1b2a1d;
+    color: #b9d9bd;
+    font-size: 13px;
   }
   .vbadge {
     position: absolute;
