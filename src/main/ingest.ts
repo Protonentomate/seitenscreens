@@ -225,10 +225,10 @@ export class IngestQueue {
         )
         const rootTemplates = new Set(snap.templates.filter((t) => !t.group).map((t) => norm(t.name)))
         if (!group && groupNames.has(norm(name))) {
-          return { ok: false, error: `„${name}" ist bereits eine Gruppe — bitte Gruppe auswählen oder anders benennen` }
+          return { ok: false, error: `„${name}" ist bereits eine Gruppe. Bitte die Gruppe auswählen oder anders benennen.` }
         }
         if (group && rootTemplates.has(norm(group))) {
-          return { ok: false, error: `„${group}" ist bereits eine Vorlage im Wurzelordner — anderer Gruppen-Name nötig` }
+          return { ok: false, error: `„${group}" ist bereits eine Vorlage im Wurzelordner. Bitte einen anderen Gruppen-Namen wählen.` }
         }
       }
     }
@@ -741,7 +741,7 @@ export class IngestQueue {
     const destDir = this.destDirFor(template.group, template.name)
     const meta = this.readMeta(destDir)
     if (!meta) {
-      return { ok: false, error: `Keine _meta.json — vor der Re-Render-Funktion erstellt, bitte neu hochladen: ${template.ref}` }
+      return { ok: false, error: `Keine _meta.json (vor der Neu-rechnen-Funktion erstellt), bitte neu hochladen: ${template.ref}` }
     }
     const originalDir = path.join(destDir, '_original')
 

@@ -124,7 +124,7 @@ export async function startApi(
     if (resolved.ambiguous) {
       return {
         status: 409,
-        body: { ok: false, error: `Mehrdeutig — Gruppe angeben: ${resolved.ambiguous.join(', ')}` },
+        body: { ok: false, error: `Mehrdeutig, bitte Gruppe angeben: ${resolved.ambiguous.join(', ')}` },
       }
     }
     const template = resolved.template
@@ -136,7 +136,7 @@ export async function startApi(
         status: 409,
         body: {
           ok: false,
-          error: `Vorlage unvollständig (${template.warnings[0] ?? ''}) — mit ?force=1 werden nur die vorhandenen Leinwände gewechselt`,
+          error: `Vorlage unvollständig (${template.warnings[0] ?? ''}). Mit ?force=1 werden nur die vorhandenen Leinwände gewechselt`,
         },
       }
     }
@@ -526,7 +526,7 @@ export async function startApi(
         snapshot.activeTemplate === template.ref ||
         Object.values(snapshot.screens).some((c) => c?.file.startsWith(filePrefix))
       if (inUse) {
-        return reply.status(409).send({ ok: false, error: 'Vorlage ist gerade live — zuerst etwas anderes anwenden' })
+        return reply.status(409).send({ ok: false, error: 'Vorlage ist gerade live. Zuerst etwas anderes anwenden.' })
       }
       const srcDir = template.group
         ? path.join(mediaRoot, template.group, template.name)
@@ -550,7 +550,7 @@ export async function startApi(
       }
       const inUse = Object.values(store.snapshot().screens).some((c) => c?.file === rel)
       if (inUse) {
-        return reply.status(409).send({ ok: false, error: 'Datei liegt gerade auf einer Leinwand — zuerst wechseln' })
+        return reply.status(409).send({ ok: false, error: 'Datei liegt gerade auf einer Leinwand. Zuerst etwas anderes anzeigen.' })
       }
       const dest = trashDestination(mediaRoot, path.basename(rel))
       try {
@@ -694,7 +694,7 @@ export async function startApi(
   const rerenderRef = async (ref: string): Promise<{ status: number; body: Record<string, unknown> }> => {
     const resolved = index.resolveTemplate(ref)
     if (resolved.ambiguous) {
-      return { status: 409, body: { ok: false, error: `Mehrdeutig — Gruppe angeben: ${resolved.ambiguous.join(', ')}` } }
+      return { status: 409, body: { ok: false, error: `Mehrdeutig, bitte Gruppe angeben: ${resolved.ambiguous.join(', ')}` } }
     }
     if (!resolved.template) {
       return { status: 404, body: { ok: false, error: `Vorlage nicht gefunden: ${ref}` } }
@@ -978,7 +978,7 @@ export async function startApi(
   const buttonHandler = async (ref: string, req: FastifyRequest, reply: FastifyReply) => {
     const resolved = index.resolveTemplate(ref)
     if (resolved.ambiguous) {
-      return reply.status(409).send({ ok: false, error: `Mehrdeutig — Gruppe angeben: ${resolved.ambiguous.join(', ')}` })
+      return reply.status(409).send({ ok: false, error: `Mehrdeutig, bitte Gruppe angeben: ${resolved.ambiguous.join(', ')}` })
     }
     const template = resolved.template
     if (!template) return reply.status(404).send({ ok: false, error: `Vorlage nicht gefunden: ${ref}` })

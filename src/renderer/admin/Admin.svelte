@@ -226,9 +226,9 @@
     }
     if (uploadMode === 'span2') {
       const ratio = (2 * layout.canvasWmm + (uploadGaps === 'none' ? 0 : layout.gapsMm[0])) / h
-      return `Ideal: Seitenverhältnis ≈ ${ratio.toFixed(2)}:1 (z.B. ${Math.round(1440 * ratio)}×1440) — normales Quer-/Quadratformat passt hier gut.`
+      return `Ideal: Seitenverhältnis ≈ ${ratio.toFixed(2)}:1 (z.B. ${Math.round(1440 * ratio)}×1440). Normales Quer- oder Quadratformat passt hier gut.`
     }
-    return 'Ideal: Hochformat 9:16 (z.B. 1080×1920) — normale Querformat-Fotos bekommen beim „Einpassen" schwarze Ränder.'
+    return 'Ideal: Hochformat 9:16 (z.B. 1080×1920). Normale Querformat-Fotos bekommen beim „Einpassen" schwarze Ränder.'
   })
 
   async function submitUpload(event: SubmitEvent): Promise<void> {
@@ -277,7 +277,7 @@
       if (!res.ok || data.ok === false) {
         showBanner('error', data.error ?? `Upload fehlgeschlagen (${res.status})`)
       } else {
-        showBanner('ok', overwritesExisting ? 'Hochgeladen — Vorlage wird überschrieben' : 'Hochgeladen — Verarbeitung läuft')
+        showBanner('ok', overwritesExisting ? 'Hochgeladen, Vorlage wird überschrieben' : 'Hochgeladen, Verarbeitung läuft')
         uploadFile = null
         quadFiles = { LinksLinks: null, LinksRechts: null, RechtsLinks: null, RechtsRechts: null }
         uploadTemplateName = ''
@@ -321,12 +321,12 @@
       parts.length === 2
         ? `/api/template/${encodeURIComponent(parts[0])}/${encodeURIComponent(parts[1])}/rerender`
         : `/api/template/${encodeURIComponent(ref)}/rerender`
-    if (await api(url, {})) showBanner('ok', `„${ref}" wird neu gerechnet — siehe Jobs`)
+    if (await api(url, {})) showBanner('ok', `„${ref}" wird neu gerechnet (siehe Jobs)`)
   }
 
   async function rerenderAll(): Promise<void> {
     if (!confirm('Alle Span-/Span2-Vorlagen aus dem Original neu rechnen (mit den aktuellen Wandmassen)?')) return
-    if (await api('/api/rerender-all?modes=span,span2', {})) showBanner('ok', 'Neuberechnung gestartet — siehe Jobs')
+    if (await api('/api/rerender-all?modes=span,span2', {})) showBanner('ok', 'Neuberechnung gestartet (siehe Jobs)')
   }
 
   function templatesOf(group: string) {
@@ -590,7 +590,7 @@
       showBanner(
         'ok',
         data.mediaRootKept
-          ? 'Konfiguration importiert — Medienordner-Pfad existiert hier nicht, der bisherige bleibt'
+          ? 'Konfiguration importiert. Den Medienordner-Pfad gibt es hier nicht, der bisherige bleibt.'
           : 'Konfiguration importiert',
       )
     } catch (err) {
@@ -615,15 +615,15 @@
   const PLACEMENT_TEXT: Record<string, string> = {
     assigned: 'fest zugeordnet',
     recognized: 'fest zugeordnet (wiedererkannt)',
-    auto: 'automatisch verteilt — noch nicht bestätigt',
-    missing: 'kein Beamer erkannt — Fenster wartet versteckt und erscheint beim Anschliessen',
+    auto: 'automatisch verteilt, noch nicht bestätigt',
+    missing: 'kein Beamer erkannt, das Fenster wartet versteckt und erscheint beim Anschliessen',
     simulator: 'Simulator',
   }
   function placementText(role: WindowRole): string {
     if (!state) return ''
     const p = state.windowPlacement[role]
     const d = state.displays.find((x) => x.id === p.displayId)
-    const where = d ? `${d.label} (${d.bounds.width}×${d.bounds.height})${d.primary ? ', Hauptbildschirm' : ''} — ` : ''
+    const where = d ? `${d.label} (${d.bounds.width}×${d.bounds.height})${d.primary ? ', Hauptbildschirm' : ''}: ` : ''
     return where + (PLACEMENT_TEXT[p.reason] ?? p.reason)
   }
 
@@ -634,7 +634,7 @@
 
 <main>
   <header>
-    <h1>Seitenscreens — Verwaltung</h1>
+    <h1>Seitenscreens: Verwaltung</h1>
     <span class="dot" class:on={connected} title={connected ? 'Verbunden' : 'Getrennt'}></span>
     <div class="spacer"></div>
     <a class="backlink" href={controlUrl}>← Zur Steuerung</a>
@@ -690,7 +690,7 @@
           </div>
           {#if overwriteTarget}
             <div class="overwritehint">
-              ⚠ Es gibt bereits eine Vorlage „{overwriteTarget.name}" in {groupLabel(overwriteTarget.group)} — sie wird
+              Achtung: Es gibt bereits eine Vorlage „{overwriteTarget.name}" in {groupLabel(overwriteTarget.group)}, sie wird
               überschrieben. {state.activeTemplate === overwriteTarget.ref
                 ? 'Sie ist gerade LIVE und wird nach der Verarbeitung automatisch neu geladen.'
                 : ''}
@@ -737,15 +737,15 @@
           {#if isSpanMode}
             <div class="uploadrow">
               <span class="rowlabel">Übergang zwischen den Leinwänden:</span>
-              <label class="radio" title="Alle Lücken und der Höhenversatz maskieren Bildteile — durchlaufende Motive fluchten physisch">
+              <label class="radio" title="Alle Lücken und der Höhenversatz maskieren Bildteile, durchlaufende Motive fluchten physisch">
                 <input type="radio" bind:group={uploadGaps} value="exact" /> Geometrisch korrekt (alle Abstände)
               </label>
               {#if uploadMode === 'span'}
-                <label class="radio" title="Äussere Paare korrekt, aber der Mittelabstand über der Bühne = 0 — in der Mitte geht das Motiv direkt über (kein Verlust dort)">
+                <label class="radio" title="Äussere Paare korrekt, aber der Mittelabstand über der Bühne = 0: In der Mitte geht das Motiv direkt über (kein Verlust dort)">
                   <input type="radio" bind:group={uploadGaps} value="exact-nomid" /> Korrekt, Mitte direkt (ohne Bühnen-Abstand)
                 </label>
               {/if}
-              <label class="radio" title="Die Leinwände teilen das Motiv nahtlos — nichts wird abgeschnitten">
+              <label class="radio" title="Die Leinwände teilen das Motiv nahtlos, nichts wird abgeschnitten">
                 <input type="radio" bind:group={uploadGaps} value="none" /> Nichts abschneiden (nahtlos geteilt)
               </label>
             </div>
@@ -756,14 +756,14 @@
               <label class="radio" title="Spiegelt die linke Doppel-Leinwand horizontal">
                 <input type="checkbox" bind:checked={uploadMirrorLeft} /> Linke Seite spiegeln
               </label>
-              <label class="radio" title="Spiegelt die rechte Doppel-Leinwand horizontal — mit beiden Seiten zeigt die Bewegung symmetrisch zur Mitte">
+              <label class="radio" title="Spiegelt die rechte Doppel-Leinwand horizontal. Mit beiden Seiten zeigt die Bewegung symmetrisch zur Mitte">
                 <input type="checkbox" bind:checked={uploadMirrorRight} /> Rechte Seite spiegeln
               </label>
             </div>
           {/if}
           {#if hasVideoSelected}
             <div class="uploadrow">
-              <label class="radio" title="Blendet das Ende weich in den Anfang — nahtloser Loop für Motion Graphics, deren Ende nicht zum Anfang passt">
+              <label class="radio" title="Blendet das Ende weich in den Anfang: nahtloser Loop für Motion Graphics, deren Ende nicht zum Anfang passt">
                 <input type="checkbox" bind:checked={uploadLoopSmooth} /> Loop glätten (Ende weich in Anfang überblenden)
               </label>
               {#if uploadLoopSmooth}
@@ -776,7 +776,7 @@
           {/if}
           <div class="uploadrow">
             <p class="formathint">
-              {formatHint} Unterstützt: JPG/PNG/WebP und MP4/MOV/WebM — Videos werden automatisch auf das Leinwand-Format
+              {formatHint} Unterstützt: JPG/PNG/WebP und MP4/MOV/WebM. Videos werden automatisch auf das Leinwand-Format
               umgerechnet (stumm, Endlos-Loop). „Einpassen" = schwarze Ränder, „Füllen" = randlos zugeschnitten,
               „Strecken" = verzerrt auf volle Fläche.
             </p>
@@ -788,7 +788,7 @@
         </form>
 
         {#if previewUrl || uploadMode === 'quad'}
-          <h2>Vorschau — so sieht es auf den 4 Leinwänden aus</h2>
+          <h2>Vorschau: So sieht es auf den 4 Leinwänden aus</h2>
           <div class="preview">
             {#each SCREEN_NAMES as screen (screen)}
               <div class="pcol">
@@ -846,7 +846,7 @@
             {:else}
               Die Vorschau rechnet mit den Leinwand-Abständen aus den Einstellungen.
             {/if}
-            {#if isVideoUpload || (uploadMode === 'quad' && hasVideoSelected)}Videos laufen in der Vorschau evtl. nicht ganz synchron — auf den Beamern schon.{/if}
+            {#if isVideoUpload || (uploadMode === 'quad' && hasVideoSelected)}Videos laufen in der Vorschau evtl. nicht ganz synchron, auf den Beamern schon.{/if}
           </p>
         {/if}
 
@@ -856,7 +856,7 @@
             {#each [...state.jobs].reverse() as job (job.id)}
               <div class="job {job.status}">
                 <span class="joblabel">{job.label}</span>
-                <span class="jobstatus">{jobStatusLabel[job.status] ?? job.status}{job.error ? ` — ${job.error}` : ''}</span>
+                <span class="jobstatus">{jobStatusLabel[job.status] ?? job.status}{job.error ? `: ${job.error}` : ''}</span>
                 {#if job.status === 'running'}
                   <progress value={job.progress} max="1"></progress>
                 {/if}
@@ -874,7 +874,7 @@
           </button>
         </div>
         <p class="muted small">
-          „Papierkorb" verschiebt in den Ordner „_Papierkorb" im Medienordner — nichts wird endgültig gelöscht.
+          „Papierkorb" verschiebt in den Ordner „_Papierkorb" im Medienordner, nichts wird endgültig gelöscht.
           Wiederherstellen: in Nextcloud aus „_Papierkorb" zurückschieben. „Neu rechnen" erzeugt eine Vorlage aus
           ihrem gesicherten Original neu (z.B. nach geänderten Leinwand-Massen). Die gerade live geschaltete Vorlage
           kann nicht verschoben werden.
@@ -891,7 +891,7 @@
                   {/each}
                 </div>
                 <span class="tname" title={t.ref}>{t.name}</span>
-                {#if t.warnings.length > 0}<span class="warn" title={t.warnings.join('\n')}>⚠</span>{/if}
+                {#if t.warnings.length > 0}<span class="warn" title={t.warnings.join('\n')}>!</span>{/if}
                 {#if state.activeTemplate === t.ref}<span class="livebadge">LIVE</span>{/if}
                 <button class="mini" onclick={() => rerenderTemplate(t.ref)} title="Aus dem Original neu rechnen">↻ Neu rechnen</button>
                 <button
@@ -899,7 +899,7 @@
                   disabled={state.activeTemplate === t.ref}
                   onclick={() => trashTemplate(t.ref)}
                 >
-                  🗑 Papierkorb
+                  Papierkorb
                 </button>
               </div>
             {/each}
@@ -907,7 +907,7 @@
               <div class="contentrow">
                 <div class="minithumbs single"><div class="minithumb"><img src={thumbUrl(s)} alt="" loading="lazy" /></div></div>
                 <span class="tname" title={s.file}>{s.file.split('/').pop()} <em class="muted">(Einzelbild)</em></span>
-                <button class="mini danger" onclick={() => trashSingle(s.file)}>🗑 Papierkorb</button>
+                <button class="mini danger" onclick={() => trashSingle(s.file)}>Papierkorb</button>
               </div>
             {/each}
             {#if templatesOf(g).length === 0 && singlesOf(g).length === 0}
@@ -918,7 +918,7 @@
       </section>
     {:else if tab === 'kalibrierung'}
       <section>
-        <h2>Kalibrierung — Ecken ziehen (live auf den Leinwänden)</h2>
+        <h2>Kalibrierung: Ecken ziehen (live auf den Leinwänden)</h2>
         <div class="calactions">
           <button
             class:active={state.testPattern}
@@ -1018,7 +1018,7 @@
       </section>
     {:else if tab === 'anzeige'}
       <section>
-        <h2>Anzeige — Beamer-Fenster & Ausgänge</h2>
+        <h2>Anzeige: Beamer-Fenster und Ausgänge</h2>
         {#if state.simulator}
           <div class="banner ok">
             Simulator-Modus (Entwicklung): Fenster sind gerahmte Vorschau-Fenster, die Zuordnung hat hier keine echte
@@ -1048,12 +1048,12 @@
                   <option value="auto">Automatisch (von links nach rechts, ohne Hauptbildschirm)</option>
                   {#if state.windowSettings.assignments[role] !== undefined && !state.displays.some((d) => d.id === state?.windowSettings.assignments[role])}
                     <option value={String(state.windowSettings.assignments[role])} disabled>
-                      Fest zugeordnetes Display — gerade nicht angeschlossen
+                      Fest zugeordnetes Display (gerade nicht angeschlossen)
                     </option>
                   {/if}
                   {#each state.displays as d (d.id)}
                     <option value={String(d.id)}>
-                      {d.label} — {d.bounds.width}×{d.bounds.height} @ {d.bounds.x},{d.bounds.y}{d.primary ? ' (Hauptdisplay)' : ''}
+                      {d.label}, {d.bounds.width}×{d.bounds.height} @ {d.bounds.x},{d.bounds.y}{d.primary ? ' (Hauptdisplay)' : ''}
                     </option>
                   {/each}
                 </select>
@@ -1108,7 +1108,7 @@
           <div class="diag">
             <button class="mini" onclick={() => runDiagnose('links')}>Verbindung testen: links</button>
             <button class="mini" onclick={() => runDiagnose('rechts')}>Verbindung testen: rechts</button>
-            <small>Fragt Webinterface und PJLink-Status ab (ändert nichts am Beamer) — für die Fehlersuche.</small>
+            <small>Fragt Webinterface und PJLink-Status ab (ändert nichts am Beamer), für die Fehlersuche.</small>
           </div>
           {#if diagnose}<pre class="diagout">{diagnose}</pre>{/if}
           <label>
@@ -1127,7 +1127,7 @@
               <label>Abstand Mitte/Bühne (mm)<input type="number" bind:value={formGap1} min="0" /></label>
               <label>Abstand RL–RR (mm)<input type="number" bind:value={formGap2} min="0" /></label>
             </div>
-            <p class="muted small">Höhenversatz je Leinwand in mm (positiv = hängt tiefer) — für den geometrisch korrekten Übergang beim Spannen:</p>
+            <p class="muted small">Höhenversatz je Leinwand in mm (positiv = hängt tiefer), für den geometrisch korrekten Übergang beim Spannen:</p>
             <div class="layoutgrid four">
               {#each SCREEN_NAMES as s, i (s)}
                 <label>{SHORT[s]}<input type="number" bind:value={formYOff[i]} step="10" /></label>
@@ -1182,9 +1182,9 @@
           <fieldset class="layoutset">
             <legend>Sichern & Wiederherstellen</legend>
             <div class="backup">
-              <a class="btnlike" href={`${apiBase}/api/config/export`} download>⬇ Konfiguration herunterladen</a>
+              <a class="btnlike" href={`${apiBase}/api/config/export`} download>Konfiguration herunterladen</a>
               <label class="btnlike">
-                ⬆ Konfiguration importieren…
+                Konfiguration importieren…
                 <input type="file" accept=".json,application/json" hidden onchange={importConfigFile} />
               </label>
             </div>

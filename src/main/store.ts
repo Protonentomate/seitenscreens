@@ -403,7 +403,7 @@ export class Store extends EventEmitter {
         const first = blocked[0]
         return {
           ok: false,
-          error: `Nicht abspielbar: ${first?.screen} — ${first?.info?.probe?.warnings[0] ?? 'Kontrakt verletzt'}`,
+          error: `Nicht abspielbar (${first?.screen}): ${first?.info?.probe?.warnings[0] ?? 'Kontrakt verletzt'}`,
         }
       }
 

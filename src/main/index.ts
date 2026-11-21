@@ -83,7 +83,7 @@ async function main(): Promise<void> {
       if (details.reason === 'clean-exit' || details.reason === 'killed') return
       crashCount++
       const delayMs = Math.min(2 ** crashCount * 1000, 30_000)
-      console.error(`[player:${role}] Renderer weg (${details.reason}) — Neuladen in ${delayMs}ms`)
+      console.error(`[player:${role}] Renderer weg (${details.reason}), lade neu in ${delayMs} ms`)
       setTimeout(() => {
         if (!wc.isDestroyed()) wc.reload()
       }, delayMs)

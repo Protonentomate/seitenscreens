@@ -116,10 +116,10 @@ export function loadConfig(): AppConfig {
   if (primary) return mergeWithDefaults(primary)
   const backup = tryRead(file + '.bak')
   if (backup) {
-    console.warn(`[config] ${file} unlesbar — Fallback auf .bak`)
+    console.warn(`[config] ${file} unlesbar, nehme .bak`)
     return mergeWithDefaults(backup)
   }
-  console.warn(`[config] keine Config gefunden — Standardwerte (${file})`)
+  console.warn(`[config] keine Config gefunden, nehme Standardwerte (${file})`)
   return defaultConfig()
 }
 

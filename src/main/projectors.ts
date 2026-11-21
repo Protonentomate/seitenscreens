@@ -255,7 +255,7 @@ export class ProjectorManager {
           const timedOut = err instanceof Error && err.name === 'AbortError'
           status.power = timedOut ? 'unknown' : 'error'
           status.lastMessage = timedOut
-            ? `Keine Antwort innert 4 s — Befehl ist evtl. trotzdem angekommen (${clock()})`
+            ? `Keine Antwort innert 4 s, Befehl ist evtl. trotzdem angekommen (${clock()})`
             : `Nicht erreichbar: ${err instanceof Error ? err.message : String(err)}`
           errors.push(`${status.name}: ${status.lastMessage}`)
         }

@@ -37,11 +37,11 @@ function classify(raw: {
   const allowedCodecs = ['h264', 'vp9', 'av1']
   if (!allowedCodecs.includes(raw.codec)) {
     playable = false
-    warnings.push(`Codec ${raw.codec} wird nicht hardware-dekodiert — bitte über die Verwaltung neu verarbeiten`)
+    warnings.push(`Codec ${raw.codec} wird nicht hardware-dekodiert, bitte über die Verwaltung neu verarbeiten`)
   }
   if (raw.fps > 32) {
     playable = false
-    warnings.push(`${Math.round(raw.fps)} fps überlastet den Beamer-PC — Ziel sind 30 fps`)
+    warnings.push(`${Math.round(raw.fps)} fps überlastet den Beamer-PC (Ziel: 30 fps)`)
   }
   if (raw.width * raw.height > 1080 * 1920) {
     playable = false
@@ -50,7 +50,7 @@ function classify(raw: {
   if (playable) {
     if (raw.hasAudio) warnings.push('Enthält eine Tonspur (wird stumm abgespielt, kostet aber Leistung)')
     if (raw.width * raw.height > 720 * 1280) {
-      warnings.push('Grösser als nötig — 720×1280 reicht für die Leinwände und halbiert die Last')
+      warnings.push('Grösser als nötig: 720×1280 reicht für die Leinwände und halbiert die Last')
     }
   }
   return { ...raw, playable, warnings }
@@ -312,7 +312,7 @@ export class MediaIndex extends EventEmitter {
         } else {
           // ffprobe nicht installiert: im Zweifel abspielbar, aber markieren
           probe = classify({ codec: 'h264', width: 0, height: 0, fps: 0, durationS: 0, hasAudio: false })
-          probe.warnings = ['Video konnte nicht geprüft werden — ffprobe fehlt auf diesem Rechner']
+          probe.warnings = ['Video konnte nicht geprüft werden, ffprobe fehlt auf diesem Rechner']
         }
       }
       info.probe = probe
@@ -404,7 +404,7 @@ export class MediaIndex extends EventEmitter {
 
     const warnings: string[] = []
     const missing = SCREEN_NAMES.filter((s) => !files[s])
-    if (missing.length > 0) warnings.push(`Unvollständig — fehlt: ${missing.join(', ')}`)
+    if (missing.length > 0) warnings.push(`Unvollständig, es fehlt: ${missing.join(', ')}`)
     for (const screen of found) {
       const probe = files[screen]?.probe
       if (probe && !probe.playable) warnings.push(`${screen}: ${probe.warnings[0] ?? 'nicht abspielbar'}`)

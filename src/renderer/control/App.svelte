@@ -229,14 +229,14 @@
 
     {#if !state.mediaIndex.mediaRootExists}
       <div class="banner error">
-        Medienordner nicht gefunden{state.mediaRoot ? `: ${state.mediaRoot}` : ' (nicht konfiguriert)'} — in der
+        Medienordner nicht gefunden{state.mediaRoot ? `: ${state.mediaRoot}` : ' (nicht konfiguriert)'}. In der
         „Verwaltung" den Pfad zum Nextcloud-Ordner „_Vorlagen" setzen.
       </div>
     {/if}
 
     {#if missingBeamers.length > 0}
       <div class="banner warn">
-        {missingBeamers.length === 2 ? 'Keine Beamer erkannt' : `Beamer ${missingBeamers[0]} nicht erkannt`} —
+        {missingBeamers.length === 2 ? 'Keine Beamer erkannt' : `Beamer ${missingBeamers[0]} nicht erkannt`}:
         {missingBeamers.length === 2 ? 'die Fenster erscheinen' : 'das Fenster erscheint'} automatisch, sobald der Beamer
         angeschlossen bzw. eingeschaltet ist. <a href={`${adminUrl}#anzeige`}>Anzeige prüfen</a>
       </div>
@@ -261,7 +261,7 @@
         class:danger={state.blackout}
         onclick={() => api(`/api/blackout/${state?.blackout ? 'off' : 'on'}`)}
       >
-        {state.blackout ? '■ Blackout aktiv — aufheben' : 'Blackout'}
+        {state.blackout ? '■ Blackout aktiv: aufheben' : 'Blackout'}
       </button>
       <button class:active={state.testPattern} onclick={() => api(`/api/testpattern/${state?.testPattern ? 'off' : 'on'}`)}>
         Testbild
@@ -282,7 +282,7 @@
     {@const hasLiveVideo = videoContents.length > 0 && videoDuration > 0}
     <section class="videobar" class:idle={!hasLiveVideo}>
       <button class="big" disabled={!hasLiveVideo} onclick={() => api('/api/video/toggle')}>
-        {state.videoPaused && hasLiveVideo ? '▶ Weiter' : '⏸ Pause'}
+        {state.videoPaused && hasLiveVideo ? 'Weiter' : 'Pause'}
       </button>
       <input
         class="seek"
@@ -304,7 +304,7 @@
     </section>
 
     <section>
-      <h2>Live {state.activeTemplate ? `— ${state.activeTemplate}` : ''}</h2>
+      <h2>Live{state.activeTemplate ? `: ${state.activeTemplate}` : ''}</h2>
       <div class="live">
         {#each SCREEN_NAMES as screen (screen)}
           {@const content = state.screens[screen]}
@@ -368,7 +368,7 @@
             <div class="cardfoot">
               <span class="tname" title={t.ref}>{t.name}</span>
               {#if t.warnings.length > 0}
-                <span class="warn" title={t.warnings.join('\n')}>⚠</span>
+                <span class="warn" title={t.warnings.join('\n')}>!</span>
               {/if}
               <button class="primary" onclick={() => applyTemplate(t)}>
                 {state.activeTemplate === t.ref ? 'Aktiv' : 'Anwenden'}
@@ -380,7 +380,7 @@
     </section>
 
     <section>
-      <h2>Einzelbilder {selectedGroup ? `— ${groupLabel(selectedGroup)}` : ''}</h2>
+      <h2>Einzelbilder{selectedGroup ? `: ${groupLabel(selectedGroup)}` : ''}</h2>
       {#if visibleSingles.length === 0}
         <p class="muted">Keine losen Dateien in dieser Gruppe.</p>
       {/if}
