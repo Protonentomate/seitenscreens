@@ -219,7 +219,7 @@
 
     {#if state.disabledScreens?.length}
       <div class="banner warn">
-        🎄 Weihnachtsbaum-Modus: {state.disabledScreens.length === 1 ? 'Leinwand' : 'Leinwände'}
+        Weihnachtsbaum-Modus: {state.disabledScreens.length === 1 ? 'Leinwand' : 'Leinwände'}
         {state.disabledScreens.map((s) => LONG[s]).join(', ')}
         {state.disabledScreens.length === 1 ? 'ist' : 'sind'} ausgeschaltet und
         {state.disabledScreens.length === 1 ? 'bleibt' : 'bleiben'} schwarz.

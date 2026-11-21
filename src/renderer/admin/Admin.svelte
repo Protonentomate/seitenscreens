@@ -1139,7 +1139,7 @@
           </div>
           <!-- Wirken sofort (ohne „Speichern") -->
           <fieldset class="layoutset">
-            <legend>🎄 Weihnachtsbaum-Modus (Leinwände ausschalten)</legend>
+            <legend>Weihnachtsbaum-Modus (Leinwände ausschalten)</legend>
             <p class="muted small">
               Steht etwas vor einer Leinwand, hier ausschalten: Sie bleibt dann bei jeder Vorlage schwarz, alles andere
               läuft normal. Wirkt sofort; die Steuerung zeigt einen Hinweis, solange eine Leinwand aus ist.
