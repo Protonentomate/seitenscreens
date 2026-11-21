@@ -201,7 +201,7 @@ export class IngestQueue {
     // Der Index ignoriert Ordner mit diesen Präfixen — so benannte Uploads
     // wären nach der Verarbeitung unsichtbar
     if (IGNORED_DIR_PATTERN.test(name) || (group && IGNORED_DIR_PATTERN.test(group))) {
-      return { ok: false, error: 'Name würde ignoriert (beginnt mit „serie", „archiv", . oder _)' }
+      return { ok: false, error: 'Name würde ignoriert (heisst „Archiv" oder beginnt mit . oder _)' }
     }
 
     if (this.index) {

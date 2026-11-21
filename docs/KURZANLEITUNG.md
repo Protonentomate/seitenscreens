@@ -101,8 +101,6 @@ Medienordner/
 - **Ausblenden statt löschen:** Ordner, die mit `_` beginnen oder „Archiv"
   heissen, zeigt die App nicht an. Was man in der Verwaltung löscht, landet in
   `_Papierkorb`.
-- **Achtung:** Auch Ordner, deren Name mit **„Serie"** beginnt, blendet die App
-  aus. Eine Gruppe also nicht „Serie Advent" nennen, sondern z.B. „Advent".
 - Neue Dateien erscheinen nach ein paar Sekunden in der Steuerung, sobald die
   Nextcloud sie auf den Beamer-PC synchronisiert hat.
 

@@ -31,7 +31,8 @@ anderer Entwickler, KI-Assistent) ohne Archäologie weitermachen können.
 ### Explizit verschoben/abgelehnt
 - PJLink zum Schalten: nicht nötig (control_cgi funktioniert), Treiber-Schicht
   ist aber austauschbar gebaut. Für den **Status** wird PJLink genutzt (siehe 6.)
-- „Serie"-Unterordner in Vorlagen-Ordnern: alte Artefakte, werden ignoriert
+- „Serie"-Ordner (alte Artefakte aus dem OBS-Vorlagenordner) werden seit
+  21.11.2026 nicht mehr ausgeblendet, damit Predigtserien als Gruppe gehen
 - PIN-Schutz für Admin-Funktionen: bewusst weggelassen
 
 ## 2. Architektur
@@ -112,7 +113,7 @@ _Vorlagen/
 ├── Scene 9/                  ← Wurzel-Ordner MIT Leinwand-Dateien = Vorlage ohne Gruppe
 ├── Anzeige.jpg               ← lose Datei in der Wurzel = Einzelbild (Gruppe „Allgemein")
 ├── _Papierkorb/              ← Ablage des Papierkorbs (Admin-Tab „Inhalte"), ignoriert
-└── _irgendwas/, Archiv/, Serie*/ ← ignoriert (auch ._*, *.part, *.tmp)
+└── _irgendwas/, Archiv/       ← ignoriert (auch ._*, *.part, *.tmp)
 ```
 
 - **Gruppen**: Ein Wurzel-Ordner, der direkt Leinwand-Dateien (`LinksLinks.*`
@@ -173,7 +174,7 @@ Referenz-ffmpeg-Flags: `-c:v libx264 -preset veryfast -crf 18 -profile:v high
   in den Anfang (Standard-Überblendung 0,5 s, einstellbar) — Motion-Graphics,
   deren Ende nicht exakt zum Anfang passt, loopen so nahtlos. Das Video wird
   dabei um die Crossfade-Dauer kürzer.
-- **Namensregeln**: Vorlagen-/Gruppen-Namen, die mit „serie", „archiv", `_`
+- **Namensregeln**: Vorlagen-/Gruppen-Namen „Archiv" oder solche, die mit `_`
   oder `.` beginnen, lehnt der Upload ab (der Index würde sie ignorieren).
 - **Sofort-Verarbeitung**: Jobs laufen sofort, auch wenn ein Video live läuft.
   ffmpeg bekommt dann niedrigste OS-Priorität und gedrosselte Encoder-Threads —

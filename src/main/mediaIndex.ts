@@ -12,8 +12,11 @@ import { ffprobeBinary } from './ffmpeg'
 /** Reihenfolge = Priorität: Video schlägt Bild. */
 const EXTENSION_PRIORITY = ['.mp4', '.webm', '.png', '.jpg', '.jpeg', '.webp']
 
-/** Ordner, die nie als Vorlage gelten (Altlasten + interne Ordner). */
-export const IGNORED_DIR_PATTERN = /^(_|\.|archiv$|serie)/i
+/**
+ * Ordner, die nie als Vorlage gelten: _… (z.B. _Papierkorb), .… und „Archiv".
+ * „Serie…" wird seit 21.11.2026 angezeigt (Predigtserien als Gruppen-Namen).
+ */
+export const IGNORED_DIR_PATTERN = /^(_|\.|archiv$)/i
 
 /**
  * Encoding-Kontrakt für Videos. Direkt in Nextcloud abgelegte Dateien umgehen
@@ -324,7 +327,7 @@ export class MediaIndex extends EventEmitter {
    *   Gruppe (bisherige Struktur, bleibt kompatibel)
    * - Wurzel-Ordner OHNE Leinwand-Dateien → Gruppe; seine Unterordner sind
    *   Vorlagen, seine losen Dateien Einzelbilder der Gruppe
-   * - "_Papierkorb" (und alles mit _/.-Präfix, "archiv", "serie") wird
+   * - "_Papierkorb" (und alles mit _/.-Präfix sowie "Archiv") wird
    *   ignoriert — dorthin verschiebt die Admin-UI Gelöschtes
    */
   private async buildSnapshot(): Promise<MediaIndexSnapshot> {
