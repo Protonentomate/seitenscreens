@@ -4,6 +4,10 @@ Stand: November 2026. Erledigtes wandert in die Doku bzw. ins Git-Log.
 
 ## 1. Bedienungsanleitung (Deutsch, mit Screenshots vom Live-System)
 
+Eine Kurzanleitung ohne Bilder für Gelegenheitsnutzer gibt es seit 21.11.2026:
+`docs/KURZANLEITUNG.md` (bedienen, hochladen, Ordner-Aufbau). Die ausführliche
+Anleitung mit Screenshots bleibt offen.
+
 Damit auch andere die Seitenscreens bedienen und einrichten können. Erst
 schreiben, wenn die App auf dem Beamer-PC installiert ist und mehr Inhalte
 drin sind: dann vor Ort im Netzwerk des Beamer-PCs die Screenshots direkt
