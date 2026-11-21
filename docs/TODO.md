@@ -34,6 +34,10 @@ Inhalt:
 
 Ablage: `docs/ANLEITUNG.md` mit Bildern in `docs/img/`.
 
+Nach dem nächsten Update vor Ort neu aufnehmen (zeigen noch die alte Oberfläche
+mit Gedankenstrichen und Emojis): `websteuerung.png`, `hochladen.png`,
+`anzeige.png` in der lokalen Anleitung (`dev/anleitung/bilder/`), je 1920×1080.
+
 Erste Screenshots vom Live-System (15.11.2026, 1920×1080 für den A4-Druck,
 Steuerung und alle Reiter der Verwaltung, dazu „ganze Seite"-Varianten und die
 Handy-Ansicht) liegen lokal in `dev/screenshots/2026-11-15/`; die Steuerung
