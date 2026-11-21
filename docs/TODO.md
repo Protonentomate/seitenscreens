@@ -2,51 +2,20 @@
 
 Stand: November 2026. Erledigtes wandert in die Doku bzw. ins Git-Log.
 
-## 1. Bedienungsanleitung (Deutsch, mit Screenshots vom Live-System)
+## 1. Bedienungsanleitung: erledigt (21.11.2026)
 
-Eine Kurzanleitung ohne Bilder für Gelegenheitsnutzer gibt es seit 21.11.2026:
-`docs/KURZANLEITUNG.md` (bedienen, hochladen, Ordner-Aufbau). Die ausführliche
-Anleitung mit Screenshots bleibt offen.
+Öffentlich und neutral im Repo:
 
-Damit auch andere die Seitenscreens bedienen und einrichten können. Erst
-schreiben, wenn die App auf dem Beamer-PC installiert ist und mehr Inhalte
-drin sind: dann vor Ort im Netzwerk des Beamer-PCs die Screenshots direkt
-vom Live-System machen (Steuerung, Verwaltung, Bild auf den Leinwänden).
+- `docs/KURZANLEITUNG.md` für Gelegenheitsnutzer (bedienen, Probleme, Inhalte
+  ablegen oder hochladen)
+- `docs/HANDBUCH.md` für die Technik (Hochladen im Detail, Kalibrierung,
+  Anzeige, Einstellungen, Sicherung, Weihnachtsbaum-Modus, Stream Deck,
+  Update), Bilder in `docs/img/`
 
-Inhalt:
-
-- **Einschalten**: Desktop-Icon, Beamer ein, Steuerung öffnen (auch vom
-  Handy/Tablet über `http://<IP>:8080`), Firewall-Frage beim ersten Start
-- **Bedienen**: Vorlagen anwenden, Gruppen-Tabs, Hover-Vorschau, Einzelbilder,
-  Blackout, Video-Pause/-Regler, Beamer ein/aus
-- **Bildschirme**: links/rechts prüfen und bestätigen, tauschen, „Fenster
-  identifizieren", „Vollbild erzwingen", was passiert, wenn ein Beamer später
-  kommt
-- **Kalibrieren**: Testbild, Ecken verziehen (ziehen, Pfeiltasten, Zoom),
-  Kalibrierung sichern und wiederherstellen
-- **Hochladen**: die Modi (über alle 4, je über 2 mit Spiegeln, gleich auf
-  allen 4, 4 Dateien, eine Leinwand), Einpassen, Übergang zwischen den
-  Leinwänden, Loop glätten, Überschreiben einer bestehenden Vorlage
-- **Einstellungen**: Medienordner, Wand-Layout ausmessen, Beamer-IPs,
-  Standard-Gruppe
-- **Update und Sicherung** (Kurzfassung von INSTALLATION-KURZ.md, Abschnitt 6)
-- **Stream Deck** (Verweis auf STREAMDECK.md)
-
-Ablage: `docs/ANLEITUNG.md` mit Bildern in `docs/img/`.
-
-Nach dem nächsten Update vor Ort neu aufnehmen (zeigen noch die alte Oberfläche
-mit Gedankenstrichen und Emojis): `websteuerung.png`, `hochladen.png`,
-`anzeige.png` in der lokalen Anleitung (`dev/anleitung/bilder/`), je 1920×1080.
-
-Erste Screenshots vom Live-System (15.11.2026, 1920×1080 für den A4-Druck,
-Steuerung und alle Reiter der Verwaltung, dazu „ganze Seite"-Varianten und die
-Handy-Ansicht) liegen lokal in `dev/screenshots/2026-11-15/`; die Steuerung
-ist nach dem Update neu aufgenommen (kompakte Live-Zeile, Beamer-Status „an").
-Bedient wird fast nur am PC; die Anleitung braucht die Handy-Ansicht höchstens
-am Rand. Die Bilder liegen
-bewusst nicht im Repo: Sie zeigen Gruppen- und Vorlagennamen der Kirche. Vor
-einer Veröffentlichung neutrale Inhalte verwenden oder die Anleitung ausserhalb
-des öffentlichen Repos ablegen.
+Die Fassung für die eigene Kirche (mit Namen, Ordnerpfaden, IP-Adressen,
+Stream-Deck-Belegung) liegt nur lokal in `dev/anleitung/` und kommt nicht ins
+Repo. Offen dort: drei Screenshots (`websteuerung.png`, `hochladen.png`,
+`anzeige.png`) zeigen noch die Oberfläche vor dem 21.11.2026.
 
 ## 2. Beamer-Status: nach dem Update vor Ort prüfen
 

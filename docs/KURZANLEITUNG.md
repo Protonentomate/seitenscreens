@@ -1,4 +1,4 @@
-# Seitenscreens – Kurzanleitung
+# Seitenscreens: Kurzanleitung
 
 Für alle, die die Seitenscreens nur ab und zu bedienen oder eigene Bilder und
 Videos dafür bereitstellen.
@@ -7,14 +7,7 @@ Videos dafür bereitstellen.
 
 Zwei Beamer bespielen je zwei Hochformat-Leinwände, links und rechts der Bühne:
 
-```
-   Beamer links            Bühne            Beamer rechts
-┌────────┐ ┌────────┐                  ┌────────┐ ┌────────┐
-│   LL   │ │   LR   │                  │   RL   │ │   RR   │
-│ Links- │ │ Links- │                  │ Rechts-│ │ Rechts-│
-│ Links  │ │ Rechts │                  │ Links  │ │ Rechts │
-└────────┘ └────────┘                  └────────┘ └────────┘
-```
+![Die vier Leinwände](img/leinwaende.png)
 
 Eine **Vorlage** füllt alle vier Leinwände auf einmal, ein **Einzelbild**
 kommt auf eine oder alle Leinwände.
@@ -118,4 +111,5 @@ Medienordner/
 | Neue Vorlage fehlt | Dateinamen prüfen (siehe oben); ist die Nextcloud fertig synchronisiert? |
 | Steuerung lädt nicht | Am Beamer-PC das Desktop-Symbol „Seitenscreens" starten. |
 
-Weitere Hilfe: die verantwortliche Person aus dem Technikteam.
+Weitere Hilfe: die verantwortliche Person aus dem Technikteam. Für Einstellungen,
+Kalibrierung, Sicherung und Updates gibt es das [Handbuch](HANDBUCH.md).
